@@ -1,8 +1,9 @@
 from pydantic import BaseModel, EmailStr
 from typing import Optional
-from datetime import datetime
+from datetime import datetime, date
 
 # Usuários
+
 class UsuarioCreate(BaseModel):
     nome: str
     email: EmailStr
@@ -33,6 +34,7 @@ class LoginResponse(BaseModel):
     usuario: UsuarioResponse
 
 # Provas
+
 class ProvaBase(BaseModel):
     titulo: str
     descricao: Optional[str] = None
@@ -47,15 +49,6 @@ class ProvaBase(BaseModel):
 class ProvaCreate(ProvaBase):
     pass
 
-class ProvaResponse(ProvaBase):
-    id: int
-    status: str
-    created_at: datetime
-    criado_por: Optional[int] = None
-
-    class Config:
-        from_attributes = True
-
 class ProvaUpdate(BaseModel):
     titulo: Optional[str] = None
     descricao: Optional[str] = None
@@ -67,32 +60,62 @@ class ProvaUpdate(BaseModel):
     data_inicio_inscricao: Optional[datetime] = None
     data_fim_inscricao: Optional[datetime] = None
 
+class ProvaResponse(ProvaBase):
+    id: int
+    status: str
+    created_at: datetime
+    criado_por: Optional[int] = None
+
+    class Config:
+        from_attributes = True
+
 class MensagemResponse(BaseModel):
     message: str
-    
-# Questões
-class AlternativaBase(BaseModel):
+
+# Alternativas
+
+class AlternativaCreate(BaseModel):
     texto: str
     is_correta: bool = False
     ordem: Optional[int] = None
 
-class QuestaoBase(BaseModel):
-    enunciado: str
-    nivel_dificuldade: Optional[str] = "MEDIO"
+class AlternativaResponse(BaseModel):
+    id: int
+    texto: str
+    is_correta: bool
+    ordem: Optional[int]
+
+    class Config:
+        from_attributes = True
+
+class AlternativaPublica(BaseModel):
+    id: int
+    texto: str
     ordem: Optional[int] = None
 
-class QuestaoCreate(QuestaoBase):
-    alternativas: list[AlternativaBase]
+    class Config:
+        from_attributes = True
+# Questões
 
-class QuestaoResponse(QuestaoBase):
-    id: int
+class QuestaoCreate(BaseModel):
+    enunciado: str
     prova_id: int
-    alternativas: list[AlternativaBase]
+    nivel_dificuldade: Optional[str] = "MEDIO"
+    alternativas: list[AlternativaCreate]
+
+class QuestaoResponse(BaseModel):
+    id: int
+    enunciado: str
+    prova_id: int
+    nivel_dificuldade: str
+    ordem: Optional[int]
+    alternativas: list[AlternativaResponse]
 
     class Config:
         from_attributes = True
 
 # Simulados / Tentativas
+
 class TentativaCreate(BaseModel):
     prova_id: int
 
@@ -106,61 +129,6 @@ class ResultadoResponse(BaseModel):
     acertos: int
     respostas: list[dict]
 
-# Geolocalização
-class LocalBase(BaseModel):
-    nome: str
-    endereco: str
-    cidade: str
-    estado: str
-    cep: str
-    contato: Optional[str] = None
-    capacidade: int
-    vagas_restantes: int
-
-class LocalCreate(LocalBase):
-    latitude: float
-    longitude: float
-
-class LocalResponse(LocalBase):
-    id: int
-    created_at: datetime
-
-    class Config:
-        from_attributes = True
-
-#Questões e Alternativas
-class AlternativaCreate(BaseModel):
-    texto: str
-    is_correta: bool = False
-    ordem: Optional[int] = None
-
-class QuestaoCreate(BaseModel):
-    enunciado: str
-    prova_id: int
-    nivel_dificuldade: Optional[str] = "MEDIO"
-    alternativas: list[AlternativaCreate]
-
-class AlternativaResponse(BaseModel):
-    id: int
-    texto: str
-    is_correta: bool
-    ordem: Optional[int]
-
-    class Config:
-        from_attributes = True
-
-class QuestaoResponse(BaseModel):
-    id: int
-    enunciado: str
-    prova_id: int
-    nivel_dificuldade: str
-    ordem: Optional[int]
-    alternativas: list[AlternativaResponse]
-
-    class Config:
-        from_attributes = True
-
-#Simulados
 class IniciarSimuladoRequest(BaseModel):
     prova_id: int
 
@@ -168,7 +136,7 @@ class IniciarSimuladoResponse(BaseModel):
     tentativa_id: int
     questao_id: int
     enunciado: str
-    alternativas: list[AlternativaResponse]
+    alternativas: list[AlternativaPublica]
     questao_numero: int
     total_questoes: int
 
@@ -181,7 +149,7 @@ class ResponderQuestaoResponse(BaseModel):
     finalizado: bool
     proxima_questao_id: Optional[int] = None
     proxima_questao_enunciado: Optional[str] = None
-    proximas_alternativas: Optional[list[AlternativaResponse]] = None
+    proximas_alternativas: Optional[list[AlternativaPublica]] = None
     questao_numero: Optional[int] = None
     total_questoes: Optional[int] = None
     nota_final: Optional[float] = None
@@ -198,3 +166,57 @@ class ResultadoSimuladoResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+# Geolocalização / Locais
+
+class LocalBase(BaseModel):
+    nome: str
+    endereco: str
+    cidade: str
+    estado: str
+    cep: str
+    contato: Optional[str] = None
+    capacidade: int
+    vagas_restantes: int
+
+
+class LocalCreate(LocalBase):
+    latitude: float
+    longitude: float
+
+
+class LocalResponse(LocalBase):
+    id: int
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+# Certificações
+class CertificacaoSolicitarRequest(BaseModel):
+    prova_id: int
+
+class CertificacaoSolicitadaResponse(BaseModel):
+    tentativa_id: int
+    status: str
+
+class CertificadoPublicoResponse(BaseModel):
+    id: int
+    aluno_nome: str
+    prova_titulo: str
+    data_emissao: datetime
+    codigo: str
+
+class CertificadoValidarResponse(BaseModel):
+    valido: bool
+    certificado: Optional[CertificadoPublicoResponse] = None
+    detalhe: Optional[str] = None
+
+class HistoricoCertificacaoResponse(BaseModel):
+    id: int
+    prova_titulo: str
+    data_realizacao: datetime
+    nota: Optional[float] = None
+    resultado: Optional[str] = None
+    certificado_id: Optional[int] = None
+    bloqueio_ate: Optional[date] = None
