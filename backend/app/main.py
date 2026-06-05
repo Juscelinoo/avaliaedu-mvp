@@ -11,6 +11,7 @@ from app.database import get_db
 from app import models
 from app.routers import auth, provas, questoes, simulados, certificacoes, geracao, pdf, geolocalizacao
 from app.dependencies import get_usuario_admin
+from app.routers.relatorios import router as relatorios_router
 
 load_dotenv()
 
@@ -44,6 +45,7 @@ app.include_router(geracao.router)
 app.include_router(geracao.router)
 app.include_router(pdf.router)
 app.include_router(geolocalizacao.router)
+app.include_router(relatorios_router)
 
 # Endpoints públicos
 @app.get("/", tags=["Status"])
