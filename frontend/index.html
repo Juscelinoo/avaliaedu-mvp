@@ -23,6 +23,7 @@
       <a href="#inicio">Início</a>
       <a href="#recursos">Provas</a>
       <a href="#recursos">Resultados</a>
+      <a href="#validar">Validar certificado</a>
       <a href="auth.html">Login</a>
     </nav>
   </header>
@@ -62,6 +63,26 @@
         <p>Emissão rápida de certificados digitais.</p>
       </div>
 
+    </section>
+
+    <section class="validar-section" id="validar">
+      <div class="validar-card">
+        <h2>Validar certificado</h2>
+        <p>Digite o código de validação impresso no certificado para confirmar sua autenticidade.</p>
+
+        <form id="form-validar-certificado" class="validar-form" autocomplete="off">
+          <input
+            type="text"
+            id="input-codigo-certificado"
+            placeholder="Ex: A1B2C3D4E5F6..."
+            maxlength="64"
+            required
+          >
+          <button type="submit" class="btn-yellow" id="btn-validar-certificado">Validar</button>
+        </form>
+
+        <div id="resultado-validacao" class="resultado-validacao" hidden></div>
+      </div>
     </section>
 
   </main>

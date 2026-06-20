@@ -1,5 +1,5 @@
 from datetime import datetime
-from sqlalchemy import Column, Integer, String, Float, DateTime, Boolean, ForeignKey, Text, JSON, Date
+from sqlalchemy import Column, Integer, String, Float, DateTime, Boolean, ForeignKey, Text, JSON, Date, Table
 from sqlalchemy.sql import func
 from sqlalchemy.orm import relationship
 from app.database import Base
@@ -26,7 +26,8 @@ class Usuario(Base):
     tentativas = relationship("Tentativa", back_populates="aluno", cascade="all, delete-orphan")
     reservas = relationship("Reserva", back_populates="aluno", cascade="all, delete-orphan")
     certificados = relationship("Certificado", back_populates="aluno")
-
+    provas_componentes = Table("provas_componentes", Base.metadata, Column("prova_id", Integer, ForeignKey("provas.id", ondelete="CASCADE"), primary_key=True), Column("componente_id", Integer, ForeignKey("componentes_curriculares.id", ondelete="CASCADE"), primary_key=True),
+)
 
 class Prova(Base):
     __tablename__ = "provas"
@@ -42,8 +43,8 @@ class Prova(Base):
     tempo_limite = Column(Integer)
     data_inicio_inscricao = Column(DateTime(timezone=True), nullable=True)
     data_fim_inscricao = Column(DateTime(timezone=True), nullable=True)
-    data_inicio = Column(DateTime(timezone=True), nullable=True)
-    data_fim = Column(DateTime(timezone=True), nullable=True)
+    data_inicio = Column(Date, nullable=True)
+    data_fim = Column(Date, nullable=True)
     criado_por = Column(Integer, ForeignKey("usuarios.id"), nullable=True)
     deleted = Column(Boolean, default=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
@@ -54,7 +55,7 @@ class Prova(Base):
     tentativas = relationship("Tentativa", back_populates="prova")
     reservas = relationship("Reserva", back_populates="prova")
     certificados = relationship("Certificado", back_populates="prova")
-
+    componentes = relationship("ComponenteCurricular", secondary="provas_componentes", back_populates="provas")
 
 class Questao(Base):
     __tablename__ = "questoes"
@@ -63,6 +64,7 @@ class Questao(Base):
     enunciado = Column(Text, nullable=False)
     prova_id = Column(Integer, ForeignKey("provas.id", ondelete="CASCADE"), nullable=False)
     nivel_dificuldade = Column(String(20), default="MEDIO")
+    pontuacao = Column(Float, default=1.0)
     ordem = Column(Integer)
     imagem_url = Column(String(500), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
@@ -105,6 +107,7 @@ class Local(Base):
     geolocalizacao = Column(Geometry('POINT', srid=4326))
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+    ativo = Column(Boolean, default=True)
 
     # Relacionamentos
     reservas = relationship("Reserva", back_populates="local", cascade="all, delete-orphan")
@@ -230,3 +233,6 @@ class ComponenteCurricular(Base):
     serie = Column(String(20), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+
+    # Relacionamentos
+    provas = relationship("Prova", secondary="provas_componentes", back_populates="componentes")

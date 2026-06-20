@@ -34,7 +34,15 @@ def obter_tentativas_filtradas(
         query = query.filter(models.Usuario.nivel == nivel)
     if serie:
         query = query.filter(models.Usuario.serie == serie)
-
+    if componente_id:
+        componente = db.query(models.ComponenteCurricular).filter(
+            models.ComponenteCurricular.id == componente_id
+        ).first()
+        if componente:
+            if componente.nivel:
+                query = query.filter(models.Prova.nivel == componente.nivel)
+            if componente.serie:
+                query = query.filter(models.Prova.serie == componente.serie)
     return query.all()
 
 

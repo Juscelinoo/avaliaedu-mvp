@@ -11,15 +11,22 @@
      4.  Dashboard (métricas + provas recentes)
      5.  Provas (listagem, filtros, publicar, excluir)
      6.  Modal de Prova (criar / editar)
+     6B. Exportar prova em PDF (aplicação presencial)
      7.  Questões (listar, criar, editar, excluir)
+     7B. Geração automática de questões (US11)
      8.  Modal de Questão + alternativas dinâmicas
-     9.  Usuários (listagem, filtros, bloquear, desbloquear, excluir)
-     10. Modal de Usuário (cadastrar)
-     11. Locais (listagem, filtros, excluir)
-     12. Modal de Local (criar / editar)
-     13. Relatórios (métricas, desempenho por nível, exportar)
-     14. Modal de confirmação genérico
-     15. Helpers locais
+     9.  Componentes curriculares (US36-38)
+     9B. Modelos de questão (US11) — CRUD + upload de imagem
+     10. Usuários (listagem, filtros, bloquear, desbloquear, excluir)
+     11. Modal de Usuário (cadastrar)
+     11B. Importar alunos via CSV / XLSX (US33)
+     12. Locais (listagem, filtros, excluir)
+     12B. Reservas (US27) — visão admin
+     13. Modal de Local (criar / editar)
+     14. Relatórios (métricas, desempenho por nível, exportar)
+     15. Modal de confirmação genérico
+     16. Configuração dos filtros (event listeners)
+     17. Helpers locais
    ============================================================ */
 
 /* ─────────────────────────────────────────
@@ -34,9 +41,26 @@ let _provas       = [];
 let _usuarios     = [];
 let _locais       = [];
 let _componentes  = [];   // US36 — cache de componentes curriculares
+let _modelos      = [];   // US11 — cache de modelos de questão
+let _reservas     = [];   // US27 — cache de reservas (visão admin)
+
+/** Evita repopular os selects de filtro de Local/Prova em toda chamada. */
+let _filtrosReservasCarregados = false;
 
 /** ID da prova ativa na seção de questões. */
 let _provaAtiva = null;
+
+/** Prova ativa no modal de exportação de PDF (nova versão). */
+let _provaExportarAtiva = null;
+
+/** ID do modelo de questão aguardando upload de imagem (US11). */
+let _modeloUploadAtivo = null;
+
+/** URL da imagem atual da questão aberta no modal (null = sem imagem). */
+let _questaoImagemAtual = null;
+
+/** Linha (.alt-row) de alternativa aguardando upload de imagem. */
+let _altImagemUploadAtiva = null;
 
 /** Callback armazenado para o modal de confirmação genérico. */
 let _confirmarCallback = null;
@@ -61,7 +85,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
 /**
  * Navega para uma seção do painel, carregando os dados necessários.
- * @param {'dashboard'|'provas'|'questoes'|'usuarios'|'locais'|'relatorios'} secao
+ * @param {'dashboard'|'provas'|'questoes'|'usuarios'|'locais'|'reservas'|'componentes'|'modelos'|'relatorios'} secao
  */
 function irPara(secao) {
   document.querySelectorAll('.dash-section').forEach(s => s.classList.add('hidden'));
@@ -81,7 +105,9 @@ function irPara(secao) {
     provas:       carregarProvas,
     usuarios:     carregarUsuarios,
     locais:       carregarLocais,
+    reservas:     carregarReservas,
     componentes:  carregarComponentes,
+    modelos:      carregarModelosSecao,
     relatorios:   carregarRelatorios,
   };
   if (loaders[secao]) loaders[secao]();
@@ -195,6 +221,9 @@ function _renderProvas(lista) {
           ${p.status === 'RASCUNHO'
             ? `<button class="btn btn-secondary btn-sm" onclick="publicarProva(${p.id})">Publicar</button>`
             : ''}
+          ${p.status === 'PUBLICADA'
+            ? `<button class="btn btn-ghost btn-sm" onclick="abrirModalExportarPDF(${p.id}, '${_esc(p.titulo)}')">📄 Gerar PDFs</button>`
+            : ''}
           <button class="btn btn-ghost btn-sm" onclick="abrirModalEditarProva(${p.id})">Editar</button>
           <button class="btn btn-danger btn-sm" onclick="confirmarExclusao(
             'Excluir prova',
@@ -249,6 +278,7 @@ function abrirModalNovaProva() {
   _limparFormProva();
   document.getElementById('modal-prova-titulo').textContent = 'Nova prova';
   document.getElementById('prova-id').value = '';
+  _renderComponentesChecklist();
   openModal('modal-prova');
 }
 
@@ -271,6 +301,16 @@ async function abrirModalEditarProva(id) {
     document.getElementById('prova-data-fim').value     = _toDatetimeLocal(p.data_fim_inscricao);
     document.getElementById('prova-inscricao-inicio').value = _toDatetimeLocal(p.data_inicio_inscricao);
     document.getElementById('prova-inscricao-fim').value    = _toDatetimeLocal(p.data_fim_inscricao);
+
+    // NOVO — US37
+    if (!_componentes.length) {
+      try {
+        const dataComp = await apiFetch('/componentes/');
+        _componentes = Array.isArray(dataComp) ? dataComp : (dataComp?.componentes ?? []);
+      } catch { /* checklist mostrará a mensagem de erro padrão */ }
+    }
+    _renderComponentesChecklist(p.componentes || []);
+
     openModal('modal-prova');
   } catch (err) {
     showToast('Erro ao carregar dados da prova.', 'danger');
@@ -334,6 +374,171 @@ function _limparFormProva() {
     .forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
   document.getElementById('prova-nivel').value = '';
   document.getElementById('prova-tipo').value  = '';
+}
+
+/** Renderiza os checkboxes de componentes curriculares vinculados à prova (US37). */
+function _renderComponentesChecklist(componentesVinculados = []) {
+  const container = document.getElementById('prova-componentes-checklist');
+  const provaId = document.getElementById('prova-id').value;
+
+  if (!provaId) {
+    container.innerHTML = `<span class="table-empty" style="padding:4px;">Salve a prova para poder vincular componentes.</span>`;
+    return;
+  }
+  if (!_componentes.length) {
+    container.innerHTML = `<span class="table-empty" style="padding:4px;">Nenhum componente cadastrado ainda.</span>`;
+    return;
+  }
+
+  const idsVinculados = new Set(componentesVinculados.map(c => c.id));
+
+  container.innerHTML = _componentes.map(c => `
+    <label style="display:flex; align-items:center; gap:6px; font-size:13px; padding:4px 8px; border-radius:6px; background:var(--c-surface-2,#f4f6fa); cursor:pointer;">
+      <input type="checkbox" ${idsVinculados.has(c.id) ? 'checked' : ''}
+        onchange="toggleComponenteProva(${c.id}, this.checked)">
+      ${_esc(c.nome)}
+    </label>`).join('');
+}
+
+/** Vincula ou desvincula um componente da prova em edição (US37). Ação imediata. */
+async function toggleComponenteProva(compId, vincular) {
+  const provaId = document.getElementById('prova-id').value;
+  if (!provaId) return;
+
+  try {
+    await apiFetch(`/componentes/prova/${provaId}/vincular?comp_id=${compId}`, {
+      method: vincular ? 'POST' : 'DELETE',
+    });
+    showToast(vincular ? 'Componente vinculado.' : 'Componente desvinculado.', 'success', 1800);
+  } catch (err) {
+    showToast(err.message || 'Erro ao atualizar vínculo do componente.', 'danger');
+  }
+}
+
+/* ─────────────────────────────────────────
+   6B. EXPORTAR PROVA EM PDF — APLICAÇÃO PRESENCIAL
+   ─────────────────────────────────────── */
+
+async function abrirModalExportarPDF(provaId, titulo) {
+  _provaExportarAtiva = { id: provaId, titulo };
+
+  document.getElementById('modal-exportar-titulo').textContent = `Gerar PDFs — ${titulo}`;
+  document.getElementById('exportar-busca-aluno').value = '';
+  document.getElementById('exportar-selecionar-todos').checked = false;
+  document.getElementById('exportar-fase-selecao').style.display = '';
+  document.getElementById('exportar-fase-resultado').style.display = 'none';
+  document.getElementById('exportar-modal-footer').innerHTML = `
+    <button class="btn btn-ghost" data-close-modal="modal-exportar-pdf">Cancelar</button>
+    <button class="btn btn-primary" id="btn-gerar-pdfs" onclick="confirmarExportarPDF()" disabled>Gerar PDFs (0)</button>
+  `;
+
+  openModal('modal-exportar-pdf');
+
+  const container = document.getElementById('exportar-lista-alunos');
+  container.innerHTML = `<div class="table-empty">Carregando alunos...</div>`;
+
+  try {
+    const data = await apiFetch('/usuarios?perfil=ALUNO&limit=200');
+    const alunos = Array.isArray(data) ? data : (data?.usuarios ?? []);
+    _renderListaAlunosExportar(alunos);
+  } catch (err) {
+    container.innerHTML = `<div class="table-empty">Erro ao carregar alunos: ${err.message}</div>`;
+  }
+}
+
+function _renderListaAlunosExportar(lista) {
+  const container = document.getElementById('exportar-lista-alunos');
+  if (!lista.length) {
+    container.innerHTML = `<div class="table-empty">Nenhum aluno cadastrado.</div>`;
+    return;
+  }
+  container.innerHTML = lista.map(a => `
+    <label class="exportar-aluno-item"
+      data-nome="${(a.nome || '').toLowerCase()}"
+      data-email="${(a.email || '').toLowerCase()}"
+      style="display:flex; align-items:center; gap:10px; padding:8px 10px; border-radius:6px; cursor:pointer;">
+      <input type="checkbox" class="exportar-aluno-check" value="${a.id}" onchange="_atualizarContagemExportar()">
+      <span style="flex:1;">
+        <div style="font-size:13px; font-weight:600; color:var(--c-text);">${_esc(a.nome)}</div>
+        <div style="font-size:12px; color:var(--c-text-muted);">${_esc(a.email)}</div>
+      </span>
+    </label>`).join('');
+}
+
+function _filtrarAlunosExportar() {
+  const busca = (document.getElementById('exportar-busca-aluno')?.value || '').toLowerCase();
+  document.querySelectorAll('#exportar-lista-alunos .exportar-aluno-item').forEach(el => {
+    const ok = el.dataset.nome.includes(busca) || el.dataset.email.includes(busca);
+    el.style.display = ok ? '' : 'none';
+  });
+}
+
+function exportarToggleTodos(checked) {
+  document.querySelectorAll('#exportar-lista-alunos .exportar-aluno-item').forEach(item => {
+    if (item.style.display !== 'none') {
+      item.querySelector('.exportar-aluno-check').checked = checked;
+    }
+  });
+  _atualizarContagemExportar();
+}
+
+function _atualizarContagemExportar() {
+  const total = document.querySelectorAll('#exportar-lista-alunos .exportar-aluno-check:checked').length;
+  const btn = document.getElementById('btn-gerar-pdfs');
+  if (btn) {
+    btn.textContent = `Gerar PDFs (${total})`;
+    btn.disabled = total === 0;
+  }
+}
+
+async function confirmarExportarPDF() {
+  const ids = [...document.querySelectorAll('#exportar-lista-alunos .exportar-aluno-check:checked')]
+    .map(el => Number(el.value));
+  if (!ids.length) { showToast('Selecione ao menos um aluno.', 'warning'); return; }
+
+  const btn = document.getElementById('btn-gerar-pdfs');
+  if (btn) { btn.disabled = true; btn.textContent = 'Gerando...'; }
+
+  try {
+    setLoading(true);
+    const resp = await apiFetch(`/pdf/provas/${_provaExportarAtiva.id}/exportar`, {
+      method: 'POST',
+      body: JSON.stringify({ aluno_ids: ids }),
+    });
+
+    document.getElementById('exportar-fase-selecao').style.display   = 'none';
+    document.getElementById('exportar-fase-resultado').style.display = '';
+
+    document.getElementById('exportar-resumo-cards').innerHTML = `
+      <div class="metric-card">
+        <div class="metric-card-header"><span class="metric-label">PDFs gerados</span></div>
+        <div class="metric-value success">${resp.total_gerados}</div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-card-header"><span class="metric-label">Erros</span></div>
+        <div class="metric-value" style="color:var(--c-danger);">${resp.total_erros}</div>
+      </div>`;
+
+    document.getElementById('exportar-resultado-tbody').innerHTML = resp.resultados.map(r => `
+      <tr>
+        <td class="td-name">${_esc(r.aluno_nome || `Aluno #${r.aluno_id}`)}</td>
+        <td>${r.url_pdf
+          ? `<a href="${r.url_pdf}" target="_blank" class="btn btn-ghost btn-sm">⬇ Baixar PDF</a>`
+          : `<span style="color:var(--c-danger); font-size:13px;">${_esc(r.erro || 'Erro desconhecido')}</span>`}
+        </td>
+      </tr>`).join('');
+
+    document.getElementById('exportar-modal-footer').innerHTML =
+      `<button class="btn btn-primary" data-close-modal="modal-exportar-pdf">Fechar</button>`;
+
+    showToast(`${resp.total_gerados} PDF(s) gerado(s) com sucesso!`, 'success');
+
+  } catch (err) {
+    showToast(err.message || 'Erro ao gerar PDFs.', 'danger');
+    if (btn) { btn.disabled = false; btn.textContent = `Gerar PDFs (${ids.length})`; }
+  } finally {
+    setLoading(false);
+  }
 }
 
 /* ─────────────────────────────────────────
@@ -435,7 +640,7 @@ function abrirModalNovaQuestao() {
   // Inicia com 2 alternativas (mínimo obrigatório — US10)
   adicionarAlternativa();
   adicionarAlternativa();
-  carregarComponentesSelect();   // US38 — preenche o select de componente
+  carregarComponentesSelect('questao-componente');   // US38 — preenche o select de componente
   openModal('modal-questao');
 }
 
@@ -450,17 +655,20 @@ async function abrirModalEditarQuestao(id) {
     document.getElementById('questao-enunciado').value   = q.enunciado || '';
     document.getElementById('questao-dificuldade').value = q.nivel_dificuldade || 'MEDIO';
 
-    // Recria as alternativas no DOM
+    _questaoImagemAtual = q.imagem_url || null;
+    _renderImagemQuestao();
+
+    // Recria as alternativas no DOM (com id e imagem, já que ambos existem no backend)
     (q.alternativas || [])
       .sort((a, b) => (a.ordem ?? 0) - (b.ordem ?? 0))
-      .forEach(alt => adicionarAlternativa(alt.texto, alt.is_correta));
+      .forEach(alt => adicionarAlternativa(alt.texto, alt.is_correta, alt.id, alt.imagem_url));
 
     // Garante mínimo de 2 se vieram menos
     const total = document.querySelectorAll('.alt-row').length;
     for (let i = total; i < 2; i++) adicionarAlternativa();
 
     // US38 — preenche select de componente e seleciona o vinculado
-    await carregarComponentesSelect(q.componente_id ?? null);
+    await carregarComponentesSelect('questao-componente', q.componente_id ?? null);
 
     openModal('modal-questao');
   } catch (err) {
@@ -475,7 +683,7 @@ async function abrirModalEditarQuestao(id) {
  * @param {string}  texto      – Texto pré-preenchido (edição)
  * @param {boolean} isCorreta  – Marcar como correta
  */
-function adicionarAlternativa(texto = '', isCorreta = false) {
+function adicionarAlternativa(texto = '', isCorreta = false, altId = null, imagemUrl = null) {
   const container = document.getElementById('alternativas-container');
   const total = container.querySelectorAll('.alt-row').length;
 
@@ -492,6 +700,8 @@ function adicionarAlternativa(texto = '', isCorreta = false) {
   const row = document.createElement('div');
   row.className = 'alt-row';
   row.dataset.uid = uid;
+  row.dataset.altId = altId || '';
+  row.dataset.imagemUrl = imagemUrl || '';
   row.style.cssText = 'display:flex; align-items:center; gap:10px;';
   row.innerHTML = `
     <span style="font-weight:700; font-size:14px; min-width:20px; color:var(--c-text-muted);">${letra}</span>
@@ -500,6 +710,11 @@ function adicionarAlternativa(texto = '', isCorreta = false) {
       value="${_esc(texto)}"
       style="flex:1;"
       oninput="this.closest('.alt-row').querySelector('.alt-correta').disabled = false;">
+    <button type="button" class="btn btn-ghost btn-sm alt-btn-imagem"
+      onclick="dispararUploadImagemAlternativa(this)"
+      title="${altId ? 'Anexar imagem' : 'Salve a questão antes de anexar imagem nesta alternativa'}"
+      ${altId ? '' : 'disabled'}
+      style="padding:4px 6px; font-size:14px; line-height:1;">🖼</button>
     <label style="display:flex; align-items:center; gap:4px; font-size:13px; cursor:pointer; white-space:nowrap; color:var(--c-text-muted);"
       title="Marcar como correta">
       <input type="radio" class="alt-correta" name="alternativa-correta"
@@ -512,6 +727,7 @@ function adicionarAlternativa(texto = '', isCorreta = false) {
       style="padding:4px 8px; font-size:16px; line-height:1;">✕</button>
   `;
   container.appendChild(row);
+  _renderImagemAlternativa(row);
 }
 
 function removerAlternativa(btn) {
@@ -545,7 +761,14 @@ async function salvarQuestao() {
     const texto     = row.querySelector('.alt-texto').value.trim();
     const isCorreta = row.querySelector('.alt-correta').checked;
     if (isCorreta) corretaCount++;
-    alternativas.push({ texto, is_correta: isCorreta, ordem: i + 1 });
+    alternativas.push({
+      texto,
+      is_correta: isCorreta,
+      ordem: i + 1,
+      // Preserva a imagem já enviada: o PUT recria as alternativas do zero,
+      // então precisamos reenviar a URL ou ela se perde na edição.
+      imagem_url: row.dataset.imagemUrl || null,
+    });
   });
 
   // Validações US10
@@ -568,6 +791,7 @@ async function salvarQuestao() {
     nivel_dificuldade: dificuldade,
     alternativas,
     componente_id: Number(document.getElementById('questao-componente').value) || null,
+    imagem_url: _questaoImagemAtual || null,
   };
 
   try {
@@ -575,17 +799,45 @@ async function salvarQuestao() {
     if (id) {
       await apiFetch(`/questoes/${id}`, { method: 'PUT', body: JSON.stringify(corpo) });
       showToast('Questão atualizada!', 'success');
+      closeModal('modal-questao');
     } else {
-      await apiFetch('/questoes', { method: 'POST', body: JSON.stringify(corpo) });
-      showToast('Questão criada!', 'success');
+      const criada = await apiFetch('/questoes', { method: 'POST', body: JSON.stringify(corpo) });
+      showToast('Questão criada! Agora você já pode anexar imagens nela.', 'success', 5000);
+      // Mantém o modal aberto, em modo edição: upload de imagem exige
+      // que a questão/alternativa já tenha um id, que só existe após o POST.
+      _aplicarResultadoQuestaoSalva(criada);
     }
-    closeModal('modal-questao');
     carregarQuestoes(_provaAtiva.id);
   } catch (err) {
     showToast(err.message || 'Erro ao salvar questão.', 'danger');
   } finally {
     setLoading(false);
   }
+}
+
+/**
+ * Aplica o resultado de uma questão recém-criada ao modal sem fechá-lo:
+ * preenche o id da questão e o id/imagem de cada alternativa, e libera
+ * os botões de upload de imagem (antes desabilitados por falta de id).
+ */
+function _aplicarResultadoQuestaoSalva(q) {
+  document.getElementById('questao-id').value = q.id;
+  document.getElementById('modal-questao-titulo').textContent = 'Editar questão';
+
+  _questaoImagemAtual = q.imagem_url || null;
+  _renderImagemQuestao();
+
+  const rows = document.querySelectorAll('#alternativas-container .alt-row');
+  (q.alternativas || []).forEach((alt, i) => {
+    const row = rows[i];
+    if (!row) return;
+    row.dataset.altId = alt.id;
+    row.dataset.imagemUrl = alt.imagem_url || '';
+    const btnImagem = row.querySelector('.alt-btn-imagem');
+    btnImagem.disabled = false;
+    btnImagem.title = 'Anexar imagem';
+    _renderImagemAlternativa(row);
+  });
 }
 
 function _limparFormQuestao() {
@@ -595,6 +847,221 @@ function _limparFormQuestao() {
   document.getElementById('questao-componente').value  = '';
   document.getElementById('alternativas-container').innerHTML = '';
   _altCounter = 0;
+  _questaoImagemAtual = null;
+  _renderImagemQuestao();
+}
+
+/* ─────────────────────────────────────────
+   8B. UPLOAD DE IMAGEM — QUESTÃO E ALTERNATIVA
+   ─────────────────────────────────────── */
+
+/** Abre o seletor de arquivo para a imagem do enunciado (exige questão já salva). */
+function dispararUploadImagemQuestao() {
+  const questaoId = document.getElementById('questao-id').value;
+  if (!questaoId) {
+    showToast('Salve a questão antes de anexar uma imagem.', 'warning');
+    return;
+  }
+  document.getElementById('questao-imagem-input').click();
+}
+
+/** Envia a imagem escolhida via POST /questoes/{id}/imagem (multipart). */
+async function _uploadImagemQuestaoSelecionada(event) {
+  const arquivo = event.target.files[0];
+  event.target.value = '';
+  const questaoId = document.getElementById('questao-id').value;
+  if (!arquivo || !questaoId) return;
+
+  const formData = new FormData();
+  formData.append('arquivo', arquivo);
+
+  try {
+    setLoading(true);
+    const resp = await apiFetch(`/questoes/${questaoId}/imagem`, {
+      method: 'POST',
+      body: formData,
+    });
+    _questaoImagemAtual = resp.imagem_url;
+    _renderImagemQuestao();
+    showToast('Imagem da questão enviada!', 'success');
+  } catch (err) {
+    showToast(err.message || 'Erro ao enviar imagem (máx. 5MB, PNG/JPG/WEBP).', 'danger', 5000);
+  } finally {
+    setLoading(false);
+  }
+}
+
+/** Atualiza a miniatura e o texto do botão conforme _questaoImagemAtual. */
+function _renderImagemQuestao() {
+  const preview = document.getElementById('questao-imagem-preview');
+  const btn = document.getElementById('btn-questao-imagem');
+  if (!preview || !btn) return;
+
+  if (_questaoImagemAtual) {
+    preview.src = _questaoImagemAtual;
+    preview.style.display = 'inline-block';
+    btn.textContent = '🖼 Trocar imagem';
+  } else {
+    preview.style.display = 'none';
+    preview.src = '';
+    btn.textContent = '🖼 Adicionar imagem';
+  }
+}
+
+/** Abre o seletor de arquivo para a imagem de uma alternativa (exige alternativa já salva). */
+function dispararUploadImagemAlternativa(btn) {
+  const row = btn.closest('.alt-row');
+  if (!row.dataset.altId) {
+    showToast('Salve a questão antes de anexar imagem nesta alternativa.', 'warning');
+    return;
+  }
+  _altImagemUploadAtiva = row;
+  document.getElementById('alternativa-imagem-input').click();
+}
+
+/** Envia a imagem escolhida via POST /questoes/{id}/alternativas/{id}/imagem (multipart). */
+async function _uploadImagemAlternativaSelecionada(event) {
+  const arquivo = event.target.files[0];
+  event.target.value = '';
+  const row = _altImagemUploadAtiva;
+  if (!arquivo || !row) return;
+
+  const questaoId = document.getElementById('questao-id').value;
+  const altId = row.dataset.altId;
+
+  const formData = new FormData();
+  formData.append('arquivo', arquivo);
+
+  try {
+    setLoading(true);
+    const resp = await apiFetch(`/questoes/${questaoId}/alternativas/${altId}/imagem`, {
+      method: 'POST',
+      body: formData,
+    });
+    row.dataset.imagemUrl = resp.imagem_url;
+    _renderImagemAlternativa(row);
+    showToast('Imagem da alternativa enviada!', 'success');
+  } catch (err) {
+    showToast(err.message || 'Erro ao enviar imagem (máx. 5MB, PNG/JPG/WEBP).', 'danger', 5000);
+  } finally {
+    setLoading(false);
+    _altImagemUploadAtiva = null;
+  }
+}
+
+/** Remove a imagem de uma alternativa via DELETE /questoes/{id}/alternativas/{id}/imagem. */
+async function removerImagemAlternativa(btn) {
+  const row = btn.closest('.alt-row');
+  const questaoId = document.getElementById('questao-id').value;
+  const altId = row.dataset.altId;
+  if (!altId) return;
+
+  try {
+    setLoading(true);
+    await apiFetch(`/questoes/${questaoId}/alternativas/${altId}/imagem`, { method: 'DELETE' });
+    row.dataset.imagemUrl = '';
+    _renderImagemAlternativa(row);
+    showToast('Imagem removida.', 'success');
+  } catch (err) {
+    showToast(err.message || 'Erro ao remover imagem (a alternativa precisa de texto ou imagem).', 'danger');
+  } finally {
+    setLoading(false);
+  }
+}
+
+/** Sincroniza a miniatura + botão de remover de uma linha de alternativa com row.dataset.imagemUrl. */
+function _renderImagemAlternativa(row) {
+  const imagemUrl = row.dataset.imagemUrl;
+  const btnImagem = row.querySelector('.alt-btn-imagem');
+  let preview = row.querySelector('.alt-imagem-preview');
+  let btnRemover = row.querySelector('.alt-btn-remover-imagem');
+
+  if (imagemUrl) {
+    if (!preview) {
+      preview = document.createElement('img');
+      preview.className = 'alt-imagem-preview';
+      preview.alt = 'Imagem da alternativa';
+      preview.style.cssText = 'max-height:32px; border-radius:4px; border:1px solid var(--c-border);';
+      btnImagem.insertAdjacentElement('beforebegin', preview);
+    }
+    preview.src = imagemUrl;
+
+    if (!btnRemover) {
+      btnRemover = document.createElement('button');
+      btnRemover.type = 'button';
+      btnRemover.className = 'btn btn-ghost btn-sm alt-btn-remover-imagem';
+      btnRemover.title = 'Remover imagem';
+      btnRemover.textContent = '✕🖼';
+      btnRemover.style.cssText = 'padding:4px 6px; font-size:13px; color:var(--c-danger);';
+      btnRemover.onclick = () => removerImagemAlternativa(btnRemover);
+      btnImagem.insertAdjacentElement('afterend', btnRemover);
+    }
+  } else {
+    if (preview) preview.remove();
+    if (btnRemover) btnRemover.remove();
+  }
+}
+
+/* ─────────────────────────────────────────
+   7B. GERAÇÃO AUTOMÁTICA DE QUESTÕES (US11)
+   ─────────────────────────────────────── */
+
+/** Abre o modal de geração automática para a prova atualmente em foco. */
+function abrirModalGerarQuestoes() {
+  if (!_provaAtiva) return;
+  document.getElementById('gerar-prova-id').value    = _provaAtiva.id;
+  document.getElementById('gerar-quantidade').value  = 10;
+  document.getElementById('gerar-dificuldade').value = '';
+  carregarComponentesSelect('gerar-componente', null, 'Qualquer componente');
+  openModal('modal-gerar-questoes');
+}
+
+/**
+ * US11 — Gera questões automaticamente a partir do banco de modelos.
+ * POST /geracao/provas/{id}/questoes. O nível é herdado da prova pelo
+ * próprio backend quando não informado, por isso não há campo "nível" aqui.
+ */
+async function gerarQuestoesAutomaticamente() {
+  const provaId      = document.getElementById('gerar-prova-id').value;
+  const quantidade   = _parseNum('gerar-quantidade');
+  const dificuldade  = document.getElementById('gerar-dificuldade').value || null;
+  const componenteId = document.getElementById('gerar-componente').value || null;
+
+  if (!quantidade || quantidade < 1) {
+    showToast('Informe uma quantidade válida (mínimo 1).', 'warning');
+    return;
+  }
+
+  const corpo = {
+    quantidade,
+    dificuldade,
+    componente_id: componenteId ? Number(componenteId) : null,
+  };
+
+  try {
+    setLoading(true);
+    const res = await apiFetch(`/geracao/provas/${provaId}/questoes`, {
+      method: 'POST',
+      body: JSON.stringify(corpo),
+    });
+    closeModal('modal-gerar-questoes');
+
+    if (res.quantidade_erros > 0) {
+      showToast(
+        `${res.quantidade_gerada} questões geradas, ${res.quantidade_erros} falharam.`,
+        'warning', 5000
+      );
+    } else {
+      showToast(`${res.quantidade_gerada} questões geradas com sucesso!`, 'success');
+    }
+    carregarQuestoes(provaId);
+  } catch (err) {
+    // Backend retorna 409 (prova já publicada) ou 422 (nenhum modelo
+    // encontrado para os filtros) — a mensagem já vem pronta em err.message.
+    showToast(err.message || 'Erro ao gerar questões.', 'danger', 5000);
+  } finally {
+    setLoading(false);
+  }
 }
 
 /* ─────────────────────────────────────────
@@ -725,7 +1192,7 @@ async function salvarComponente() {
 
 /** Exclui um componente com confirmação. */
 function excluirComponente(id, nome) {
-  confirmarAcao(
+  confirmarExclusao(
     `Excluir o componente "${nome}"?`,
     `Esta ação não pode ser desfeita. Questões vinculadas a este componente não serão deletadas, mas perderão o vínculo.`,
     async () => {
@@ -752,12 +1219,14 @@ function _limparFormComponente() {
 }
 
 /**
- * Preenche o <select id="questao-componente"> com os componentes disponíveis.
- * Usado nos modais de criar/editar questão (US38).
+ * Preenche um <select> de componente curricular com os componentes disponíveis.
+ * Reutilizado pelos modais de questão, geração automática e modelo de questão (US11/US38).
+ * @param {string} selectId        – ID do elemento <select> a preencher.
  * @param {number|null} selecionadoId – ID a pré-selecionar (edição).
+ * @param {string} placeholder     – Texto da opção vazia inicial.
  */
-async function carregarComponentesSelect(selecionadoId = null) {
-  const sel = document.getElementById('questao-componente');
+async function carregarComponentesSelect(selectId, selecionadoId = null, placeholder = 'Selecione o componente') {
+  const sel = document.getElementById(selectId);
   if (!sel) return;
 
   // Usa cache se já carregado; caso contrário busca da API
@@ -772,10 +1241,198 @@ async function carregarComponentesSelect(selecionadoId = null) {
   }
 
   sel.innerHTML =
-    `<option value="">Selecione o componente</option>` +
+    `<option value="">${placeholder}</option>` +
     _componentes.map(c =>
       `<option value="${c.id}" ${c.id === selecionadoId ? 'selected' : ''}>${c.nome}${c.codigo ? ' (' + c.codigo + ')' : ''}</option>`
     ).join('');
+}
+
+/* ─────────────────────────────────────────
+   9B. MODELOS DE QUESTÃO (US11)
+   Banco de templates usado pela geração automática.
+   O backend só expõe criar / listar / excluir / upload de
+   imagem para modelos — não existe endpoint de edição (PUT).
+   ─────────────────────────────────────── */
+
+/** Chamada ao entrar na seção: popula o filtro de componente e carrega a lista. */
+async function carregarModelosSecao() {
+  await carregarComponentesSelect('modelos-filtro-componente', null, 'Todos os componentes');
+  carregarModelos();
+}
+
+/** Busca os modelos respeitando os filtros ativos (GET /geracao/modelos). */
+async function carregarModelos() {
+  const tbody = document.getElementById('modelos-tbody');
+  tbody.innerHTML = `<tr><td colspan="6" class="table-empty">Carregando...</td></tr>`;
+
+  const nivel       = document.getElementById('modelos-filtro-nivel')?.value || '';
+  const dificuldade = document.getElementById('modelos-filtro-dificuldade')?.value || '';
+  const componenteId = document.getElementById('modelos-filtro-componente')?.value || '';
+
+  const params = new URLSearchParams();
+  if (nivel) params.set('nivel', nivel);
+  if (dificuldade) params.set('dificuldade', dificuldade);
+  if (componenteId) params.set('componente_id', componenteId);
+
+  try {
+    setLoading(true);
+    const qs = params.toString();
+    const data = await apiFetch(`/geracao/modelos${qs ? '?' + qs : ''}`);
+    _modelos = Array.isArray(data) ? data : (data?.modelos ?? []);
+    _renderModelos(_modelos);
+  } catch (err) {
+    tbody.innerHTML = `<tr><td colspan="6" class="table-empty">Erro ao carregar modelos.</td></tr>`;
+    showToast('Erro ao carregar modelos de questão.', 'danger');
+  } finally {
+    setLoading(false);
+  }
+}
+
+function _renderModelos(lista) {
+  const tbody = document.getElementById('modelos-tbody');
+
+  if (!lista.length) {
+    tbody.innerHTML = `<tr><td colspan="6" class="table-empty">Nenhum modelo cadastrado. Clique em "+ Novo modelo".</td></tr>`;
+    return;
+  }
+
+  tbody.innerHTML = lista.map(m => {
+    const comp = _componentes.find(c => c.id === m.componente_id);
+    const numVars = m.variaveis ? Object.keys(m.variaveis).length : 0;
+    return `
+    <tr>
+      <td class="td-name" style="max-width:280px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;"
+        title="${_esc(m.modelo_texto)}">${_esc(m.modelo_texto)}</td>
+      <td class="td-muted">${nivelLabel(m.nivel)}</td>
+      <td><span class="badge badge-simulado">${dificuldadeLabel(m.dificuldade)}</span></td>
+      <td class="td-muted">${comp ? comp.nome : (m.componente_id ? '#' + m.componente_id : '—')}</td>
+      <td class="td-muted">${numVars > 0 ? numVars + ' var.' : '—'}${m.imagem_url ? ' · 🖼' : ''}</td>
+      <td>
+        <div class="td-actions">
+          <button class="btn btn-ghost btn-sm" onclick="dispararUploadImagemModelo(${m.id})">Imagem</button>
+          <button class="btn btn-ghost btn-sm btn-danger" onclick="excluirModelo(${m.id})">Excluir</button>
+        </div>
+      </td>
+    </tr>`;
+  }).join('');
+}
+
+/** Abre o modal de criação de modelo (não há edição — backend não expõe PUT). */
+function abrirModalNovoModelo() {
+  _limparFormModelo();
+  carregarComponentesSelect('modelo-componente', null, 'Nenhum (genérico)');
+  openModal('modal-modelo');
+}
+
+/** Salva um novo modelo de questão via POST /geracao/modelos. */
+async function salvarModelo() {
+  const modeloTexto = document.getElementById('modelo-texto').value.trim();
+  const gabarito     = document.getElementById('modelo-gabarito').value.trim();
+  const nivel        = document.getElementById('modelo-nivel').value;
+
+  if (!modeloTexto || !gabarito || !nivel) {
+    showToast('Preencha o enunciado, o gabarito e o nível.', 'warning');
+    return;
+  }
+
+  const distradores = ['modelo-distrator-1', 'modelo-distrator-2', 'modelo-distrator-3']
+    .map(id => document.getElementById(id).value.trim())
+    .filter(Boolean);
+
+  let variaveis = null;
+  const variaveisRaw = document.getElementById('modelo-variaveis').value.trim();
+  if (variaveisRaw) {
+    try {
+      variaveis = JSON.parse(variaveisRaw);
+    } catch {
+      showToast('O campo "Variáveis" precisa ser um JSON válido. Ex: {"a":[1,2,3]}', 'warning', 5000);
+      return;
+    }
+  }
+
+  const corpo = {
+    modelo_texto  : modeloTexto,
+    gabarito,
+    distradores,
+    variaveis,
+    nivel,
+    serie         : document.getElementById('modelo-serie').value.trim() || null,
+    componente_id : document.getElementById('modelo-componente').value
+                      ? Number(document.getElementById('modelo-componente').value) : null,
+    dificuldade   : document.getElementById('modelo-dificuldade').value || 'MEDIO',
+  };
+
+  try {
+    setLoading(true);
+    await apiFetch('/geracao/modelos', { method: 'POST', body: JSON.stringify(corpo) });
+    showToast('Modelo de questão criado!', 'success');
+    closeModal('modal-modelo');
+    carregarModelos();
+  } catch (err) {
+    showToast(err.message || 'Erro ao salvar modelo.', 'danger');
+  } finally {
+    setLoading(false);
+  }
+}
+
+/** Exclui um modelo de questão com confirmação. */
+function excluirModelo(id) {
+  confirmarExclusao(
+    'Excluir modelo de questão',
+    'Tem certeza? Questões já geradas anteriormente a partir deste modelo não são afetadas.',
+    async () => {
+      try {
+        setLoading(true);
+        await apiFetch(`/geracao/modelos/${id}`, { method: 'DELETE' });
+        showToast('Modelo excluído.', 'success');
+        carregarModelos();
+      } catch (err) {
+        showToast(err.message || 'Erro ao excluir modelo.', 'danger');
+      } finally {
+        setLoading(false);
+      }
+    }
+  );
+}
+
+/** Abre o seletor de arquivo para anexar uma imagem a um modelo (input oculto). */
+function dispararUploadImagemModelo(modeloId) {
+  _modeloUploadAtivo = modeloId;
+  document.getElementById('modelo-imagem-input').click();
+}
+
+/** Envia a imagem escolhida via POST /geracao/modelos/{id}/imagem (multipart). */
+async function _uploadImagemSelecionada(event) {
+  const arquivo = event.target.files[0];
+  event.target.value = ''; // permite selecionar o mesmo arquivo novamente depois
+  if (!arquivo || !_modeloUploadAtivo) return;
+
+  const formData = new FormData();
+  formData.append('arquivo', arquivo);
+
+  try {
+    setLoading(true);
+    await apiFetch(`/geracao/modelos/${_modeloUploadAtivo}/imagem`, {
+      method: 'POST',
+      body: formData,
+    });
+    showToast('Imagem enviada!', 'success');
+    carregarModelos();
+  } catch (err) {
+    showToast(err.message || 'Erro ao enviar imagem (máx. 5MB, PNG/JPG/WEBP).', 'danger', 5000);
+  } finally {
+    setLoading(false);
+    _modeloUploadAtivo = null;
+  }
+}
+
+function _limparFormModelo() {
+  ['modelo-texto', 'modelo-gabarito', 'modelo-distrator-1', 'modelo-distrator-2',
+   'modelo-distrator-3', 'modelo-serie', 'modelo-variaveis'].forEach(id => {
+    document.getElementById(id).value = '';
+  });
+  document.getElementById('modelo-nivel').value       = '';
+  document.getElementById('modelo-dificuldade').value = 'MEDIO';
 }
 
 /* ─────────────────────────────────────────
@@ -884,7 +1541,7 @@ async function excluirUsuario(id) {
 }
 
 /* ─────────────────────────────────────────
-   10. MODAL DE USUÁRIO — CADASTRAR
+   11. MODAL DE USUÁRIO — CADASTRAR
    ─────────────────────────────────────── */
 
 function abrirModalNovoUsuario() {
@@ -948,7 +1605,323 @@ async function salvarUsuario() {
 }
 
 /* ─────────────────────────────────────────
-   11. LOCAIS — LISTAGEM E AÇÕES
+   11B. IMPORTAR ALUNOS — CSV / XLSX (US33)
+   ─────────────────────────────────────── */
+
+/**
+ * Abre o modal de importação com estado limpo.
+ */
+function abrirModalImportar() {
+  importarReiniciar();
+  openModal('modal-importar');
+}
+
+/**
+ * Reseta o modal para a fase inicial de upload.
+ * Chamado tanto na abertura quanto no botão "Importar outro arquivo".
+ */
+function importarReiniciar() {
+  const input = document.getElementById('importar-arquivo-input');
+  if (input) input.value = '';
+
+  const faseUpload    = document.getElementById('importar-fase-upload');
+  const faseResultado = document.getElementById('importar-fase-resultado');
+  if (faseUpload)    faseUpload.style.display    = '';
+  if (faseResultado) faseResultado.style.display = 'none';
+
+  const preview = document.getElementById('importar-arquivo-preview');
+  if (preview) preview.style.display = 'none';
+
+  const dz = document.getElementById('importar-drop-zone');
+  if (dz) {
+    dz.style.borderColor = 'var(--c-border,#d1d5db)';
+    dz.style.background  = 'transparent';
+  }
+
+  const btn = document.getElementById('btn-processar-importacao');
+  if (btn) { btn.disabled = true; btn.textContent = 'Importar alunos'; }
+
+  // Restaura o footer original
+  const footer = document.getElementById('importar-modal-footer');
+  if (footer) footer.innerHTML = `
+    <button class="btn btn-ghost" data-close-modal="modal-importar">Cancelar</button>
+    <button class="btn btn-primary" id="btn-processar-importacao"
+      onclick="processarImportacao()" disabled>Importar alunos</button>
+  `;
+}
+
+/**
+ * Handler de drop na drop zone.
+ * Valida extensão e injeta o arquivo no input para reutilizar importarArquivoSelecionado().
+ */
+function importarHandleDrop(event) {
+  event.preventDefault();
+  const dz = document.getElementById('importar-drop-zone');
+  if (dz) { dz.style.borderColor = 'var(--c-border,#d1d5db)'; dz.style.background = 'transparent'; }
+
+  const file = event.dataTransfer?.files?.[0];
+  if (!file) return;
+
+  const nome = file.name.toLowerCase();
+  if (!nome.endsWith('.csv') && !nome.endsWith('.xlsx') && !nome.endsWith('.xls')) {
+    showToast('Formato inválido. Use .csv ou .xlsx', 'warning');
+    return;
+  }
+
+  // Injeta no input via DataTransfer para manter consistência
+  const input = document.getElementById('importar-arquivo-input');
+  try {
+    const dt = new DataTransfer();
+    dt.items.add(file);
+    input.files = dt.files;
+  } catch {
+    // DataTransfer não suportado em alguns browsers antigos — apenas mostra preview
+  }
+  importarMostrarPreview(file);
+}
+
+/**
+ * Chamado pelo oninput do input[type=file].
+ */
+function importarArquivoSelecionado(input) {
+  if (!input.files.length) return;
+  importarMostrarPreview(input.files[0]);
+}
+
+/**
+ * Atualiza o preview com nome e tamanho do arquivo.
+ */
+function importarMostrarPreview(file) {
+  document.getElementById('importar-preview-nome').textContent     = file.name;
+  document.getElementById('importar-preview-tamanho').textContent  = _importarFormatarTamanho(file.size);
+
+  const preview = document.getElementById('importar-arquivo-preview');
+  if (preview) preview.style.display = 'flex';
+
+  const btn = document.getElementById('btn-processar-importacao');
+  if (btn) btn.disabled = false;
+}
+
+/**
+ * Remove o arquivo selecionado e desabilita o botão de envio.
+ */
+function importarLimparArquivo() {
+  const input = document.getElementById('importar-arquivo-input');
+  if (input) input.value = '';
+
+  const preview = document.getElementById('importar-arquivo-preview');
+  if (preview) preview.style.display = 'none';
+
+  const btn = document.getElementById('btn-processar-importacao');
+  if (btn) btn.disabled = true;
+}
+
+/**
+ * GET /usuarios/importar/modelo → baixa o arquivo XLSX de exemplo.
+ */
+async function baixarModeloImportacao() {
+  try {
+    const resp = await fetch(`${API_BASE}/usuarios/importar/modelo`, {
+      headers: { 'Authorization': `Bearer ${getToken()}` },
+    });
+    if (!resp.ok) throw new Error('Falha ao baixar modelo.');
+    const blob = await resp.blob();
+    const link = document.createElement('a');
+    link.href     = URL.createObjectURL(blob);
+    link.download = 'modelo_importacao_alunos.xlsx';
+    link.click();
+    URL.revokeObjectURL(link.href);
+    showToast('Modelo baixado com sucesso!', 'success');
+  } catch (err) {
+    showToast(err.message || 'Erro ao baixar modelo.', 'danger');
+  }
+}
+
+/**
+ * POST /usuarios/importar → envia o arquivo via FormData (multipart/form-data).
+ * NÃO usa apiFetch() porque o endpoint não aceita JSON.
+ */
+async function processarImportacao() {
+  const input = document.getElementById('importar-arquivo-input');
+  if (!input?.files.length) {
+    showToast('Selecione um arquivo para importar.', 'warning');
+    return;
+  }
+
+  const arquivo = input.files[0];
+  if (arquivo.size > 5 * 1024 * 1024) {
+    showToast('Arquivo muito grande. Limite máximo: 5 MB.', 'warning');
+    return;
+  }
+
+  const btn = document.getElementById('btn-processar-importacao');
+  if (btn) { btn.disabled = true; btn.textContent = 'Importando...'; }
+
+  const formData = new FormData();
+  formData.append('arquivo', arquivo);
+
+  try {
+    setLoading(true);
+    // Não definir Content-Type — o browser insere o boundary multipart automaticamente
+    const resp = await fetch(`${API_BASE}/usuarios/importar`, {
+      method:  'POST',
+      headers: { 'Authorization': `Bearer ${getToken()}` },
+      body:    formData,
+    });
+
+    const resultado = await resp.json();
+    if (!resp.ok) {
+      const detalhe = resultado?.detail;
+      throw new Error(typeof detalhe === 'string' ? detalhe : JSON.stringify(detalhe));
+    }
+
+    _importarRenderResultado(resultado);
+    carregarUsuarios(); // atualiza tabela de usuários em segundo plano
+
+  } catch (err) {
+    showToast(err.message || 'Erro ao importar arquivo.', 'danger');
+    if (btn) { btn.disabled = false; btn.textContent = 'Importar alunos'; }
+  } finally {
+    setLoading(false);
+  }
+}
+
+/**
+ * Renderiza os resultados da importação na Fase 2 do modal.
+ */
+function _importarRenderResultado(resultado) {
+  const { total_linhas, total_importados, total_duplicados, total_erros,
+          importados = [], duplicados = [], erros = [] } = resultado;
+
+  // Alterna fases
+  document.getElementById('importar-fase-upload').style.display    = 'none';
+  document.getElementById('importar-fase-resultado').style.display = '';
+
+  // Substitui footer por Fechar + Importar outro
+  const footer = document.getElementById('importar-modal-footer');
+  if (footer) footer.innerHTML = `
+    <button class="btn btn-ghost" data-close-modal="modal-importar">Fechar</button>
+    <button class="btn btn-secondary" onclick="importarReiniciar()">↩ Importar outro arquivo</button>
+  `;
+
+  // Cards de resumo
+  document.getElementById('importar-resumo-cards').innerHTML = `
+    <div class="metric-card">
+      <div class="metric-card-header"><span class="metric-label">Total de linhas</span></div>
+      <div class="metric-value" style="font-size:26px;">${total_linhas}</div>
+      <div class="metric-sub">no arquivo</div>
+    </div>
+    <div class="metric-card">
+      <div class="metric-card-header"><span class="metric-label">Importados</span></div>
+      <div class="metric-value success" style="font-size:26px;">${total_importados}</div>
+      <div class="metric-sub">alunos criados</div>
+    </div>
+    <div class="metric-card">
+      <div class="metric-card-header"><span class="metric-label">Duplicados</span></div>
+      <div class="metric-value" style="font-size:26px; color:var(--c-warning,#d97706);">${total_duplicados}</div>
+      <div class="metric-sub">e-mails já existentes</div>
+    </div>
+    <div class="metric-card">
+      <div class="metric-card-header"><span class="metric-label">Erros</span></div>
+      <div class="metric-value" style="font-size:26px; color:var(--c-danger,#dc2626);">${total_erros}</div>
+      <div class="metric-sub">linhas inválidas</div>
+    </div>
+  `;
+
+  // Toast de resumo
+  const toastTipo = total_importados === 0 ? 'danger' : total_erros > 0 ? 'warning' : 'success';
+  const toastMsg  = total_importados === 0
+    ? 'Nenhum aluno foi importado. Verifique o arquivo.'
+    : `${total_importados} aluno(s) importado(s)${total_erros ? ` · ${total_erros} erro(s) detectado(s)` : ''}.`;
+  showToast(toastMsg, toastTipo);
+
+  // Tabela de importados + senhas provisórias
+  const blocoImp = document.getElementById('importar-bloco-importados');
+  if (importados.length) {
+    blocoImp.style.display = '';
+    document.getElementById('importar-importados-tbody').innerHTML = importados.map(a => `
+      <tr>
+        <td class="td-name">${_esc(a.nome)}</td>
+        <td class="td-muted">${_esc(a.email)}</td>
+        <td class="td-muted">${nivelLabel(a.nivel)}</td>
+        <td class="td-muted">${a.serie || '—'}</td>
+        <td>
+          <code style="background:var(--c-surface-2,#f4f6fa); padding:3px 8px; border-radius:4px; font-size:13px; font-family:monospace; user-select:all;">
+            ${_esc(a.senha_provisoria)}
+          </code>
+        </td>
+      </tr>`).join('');
+  } else {
+    blocoImp.style.display = 'none';
+  }
+
+  // Tabela de duplicados
+  const blocoDup = document.getElementById('importar-bloco-duplicados');
+  if (duplicados.length) {
+    blocoDup.style.display = '';
+    document.getElementById('importar-duplicados-tbody').innerHTML = duplicados.map(d => `
+      <tr>
+        <td class="td-muted">${d.linha}</td>
+        <td class="td-muted">${_esc(d.email)}</td>
+        <td class="td-muted" style="font-size:12px;">${_esc(d.motivo)}</td>
+      </tr>`).join('');
+  } else {
+    blocoDup.style.display = 'none';
+  }
+
+  // Tabela de erros
+  const blocoErr = document.getElementById('importar-bloco-erros');
+  if (erros.length) {
+    blocoErr.style.display = '';
+    document.getElementById('importar-erros-tbody').innerHTML = erros.map(e => `
+      <tr>
+        <td class="td-muted">${e.linha}</td>
+        <td class="td-muted">${_esc(e.dados?.nome || '—')}</td>
+        <td class="td-muted">${_esc(e.dados?.email || '—')}</td>
+        <td style="font-size:12px; color:var(--c-danger,#dc2626);">${(e.erros || []).map(_esc).join('<br>')}</td>
+      </tr>`).join('');
+  } else {
+    blocoErr.style.display = 'none';
+  }
+}
+
+/**
+ * Copia a tabela de importados para o clipboard no formato TSV
+ * (compatível com Excel e Google Sheets para colar diretamente).
+ */
+async function importarCopiarSenhas() {
+  const rows = document.querySelectorAll('#importar-importados-tbody tr');
+  if (!rows.length) { showToast('Nenhum dado para copiar.', 'warning'); return; }
+
+  const cabecalho = 'nome\temail\tnivel\tserie\tsenha_provisoria';
+  const linhas = [...rows].map(tr => {
+    const tds = tr.querySelectorAll('td');
+    return [
+      tds[0]?.textContent.trim(),
+      tds[1]?.textContent.trim(),
+      tds[2]?.textContent.trim(),
+      tds[3]?.textContent.trim(),
+      tds[4]?.querySelector('code')?.textContent.trim() || '',
+    ].join('\t');
+  });
+
+  try {
+    await navigator.clipboard.writeText([cabecalho, ...linhas].join('\n'));
+    showToast('Tabela copiada! Cole em uma planilha para salvar as senhas.', 'success');
+  } catch {
+    showToast('Não foi possível copiar automaticamente. Selecione a tabela manualmente.', 'warning');
+  }
+}
+
+/** Formata bytes em string legível (B / KB / MB). */
+function _importarFormatarTamanho(bytes) {
+  if (bytes < 1024)         return `${bytes} B`;
+  if (bytes < 1024 * 1024)  return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
+}
+
+/* ─────────────────────────────────────────
+   12. LOCAIS — LISTAGEM E AÇÕES
    ─────────────────────────────────────── */
 
 async function carregarLocais() {
@@ -1019,7 +1992,75 @@ async function excluirLocal(id) {
 }
 
 /* ─────────────────────────────────────────
-   12. MODAL DE LOCAL — CRIAR / EDITAR
+   12B. RESERVAS — VISÃO DO ADMIN (US27)
+   ─────────────────────────────────────── */
+
+async function carregarReservas() {
+  const tbody = document.getElementById('reservas-tbody');
+  tbody.innerHTML = `<tr><td colspan="6" class="table-empty">Carregando reservas...</td></tr>`;
+
+  try {
+    setLoading(true);
+    const data = await apiFetch('/reservas/admin/todas');
+    _reservas = Array.isArray(data) ? data : [];
+    _renderReservas(_reservas);
+  } catch (err) {
+    tbody.innerHTML = `<tr><td colspan="6" class="table-empty">Erro ao carregar: ${err.message}</td></tr>`;
+    showToast('Falha ao carregar reservas.', 'danger');
+  } finally {
+    setLoading(false);
+  }
+}
+
+function _renderReservas(lista) {
+  const tbody = document.getElementById('reservas-tbody');
+  if (!lista.length) {
+    tbody.innerHTML = `<tr><td colspan="6" class="table-empty">Nenhuma reserva encontrada.</td></tr>`;
+    return;
+  }
+
+  tbody.innerHTML = lista.map(r => `
+    <tr data-aluno="${(r.aluno?.nome || '').toLowerCase()}"
+        data-email="${(r.aluno?.email || '').toLowerCase()}"
+        data-prova="${(r.prova_titulo || '').toLowerCase()}"
+        data-status="${r.status || ''}">
+      <td class="td-name">
+        ${r.aluno?.nome || '—'}
+        <div class="td-muted" style="font-size:12px;">${r.aluno?.email || ''}</div>
+      </td>
+      <td class="td-muted">${r.prova_titulo || '—'}</td>
+      <td class="td-muted">${r.local?.nome || '—'}${r.local?.cidade ? ' — ' + r.local.cidade : ''}</td>
+      <td class="td-muted">${formatarDataHora(r.data_reserva)}</td>
+      <td class="td-muted">${r.data_expiracao ? formatarDataHora(r.data_expiracao) : '—'}</td>
+      <td>${_badgeReserva(r.status)}</td>
+    </tr>`).join('');
+}
+
+function _filtrarReservas() {
+  const busca  = (document.getElementById('reservas-busca')?.value || '').toLowerCase();
+  const status = document.getElementById('reservas-filtro-status')?.value || '';
+
+  document.querySelectorAll('#reservas-tbody tr[data-aluno]').forEach(tr => {
+    const ok = (tr.dataset.aluno.includes(busca) || tr.dataset.email.includes(busca) || tr.dataset.prova.includes(busca))
+      && (!status || tr.dataset.status === status);
+    tr.style.display = ok ? '' : 'none';
+  });
+}
+
+/** Badge colorido por status — mesmo padrão de cores usado em aluno.js */
+function _badgeReserva(status) {
+  const map = {
+    ATIVA:      ['badge-publicada', 'Ativa'],
+    UTILIZADA:  ['badge-aprovado',  'Utilizada'],
+    CANCELADA:  ['badge-reprovado', 'Cancelada'],
+    EXPIRADA:   ['badge-rascunho',  'Expirada'],
+  };
+  const [cls, label] = map[status] || ['badge-rascunho', status];
+  return `<span class="badge ${cls}">${label}</span>`;
+}
+
+/* ─────────────────────────────────────────
+   13. MODAL DE LOCAL — CRIAR / EDITAR
    ─────────────────────────────────────── */
 
 function abrirModalNovoLocal() {
@@ -1116,107 +2157,196 @@ function _limparFormLocal() {
 }
 
 /* ─────────────────────────────────────────
-   13. RELATÓRIOS
+   14. RELATÓRIOS — US28, US29, US35
    ─────────────────────────────────────── */
 
+/** Cache do último resultado para evitar re-fetch ao limpar filtro */
+let _relCache = null;
+
+/** Monta query string a partir dos filtros do painel */
+function _relQueryParams() {
+  const inicio  = document.getElementById('rel-data-inicio')?.value;
+  const fim     = document.getElementById('rel-data-fim')?.value;
+  const nivel   = document.getElementById('rel-filtro-nivel')?.value;
+  const serie   = document.getElementById('rel-filtro-serie')?.value.trim();
+
+  const params = new URLSearchParams();
+  if (inicio) params.set('data_inicio', new Date(inicio).toISOString());
+  if (fim)    params.set('data_fim',    new Date(fim + 'T23:59:59').toISOString());
+  if (nivel)  params.set('nivel', nivel);
+  if (serie)  params.set('serie', serie);
+  return params.toString() ? '?' + params.toString() : '';
+}
+
 async function carregarRelatorios() {
+  await _buscarEExibirRelatorio();
+}
+
+async function aplicarFiltrosRelatorio() {
+  await _buscarEExibirRelatorio();
+}
+
+function limparFiltrosRelatorio() {
+  document.getElementById('rel-data-inicio').value  = '';
+  document.getElementById('rel-data-fim').value     = '';
+  document.getElementById('rel-filtro-nivel').value = '';
+  document.getElementById('rel-filtro-serie').value = '';
+  _buscarEExibirRelatorio();
+}
+
+async function _buscarEExibirRelatorio() {
+  const btnAplicar = document.getElementById('btn-aplicar-filtros');
+  if (btnAplicar) { btnAplicar.disabled = true; btnAplicar.textContent = 'Carregando...'; }
+
   try {
-    setLoading(true);
-    const data = await apiFetch('/relatorios/desempenho');
+    const qs   = _relQueryParams();
+    const data = await apiFetch(`/relatorios/desempenho${qs}`);
+    _relCache  = data;
 
-    _setEl('rel-provas-finalizadas', data?.total_tentativas ?? '—');
-    _setEl('rel-certificados',       data?.total_certificados ?? '—');
+    // ── Métricas gerais ──────────────────────────────────
+    const eg = data.estatisticas_gerais || {};
+    _setEl('rel-total-tentativas', eg.total_tentativas ?? '—');
+    _setEl('rel-certificados',     data.total_certificados ?? '—');
     _setEl('rel-media',
-      data?.media_geral != null ? Number(data.media_geral).toFixed(1) : '—');
+      eg.media_geral != null ? Number(eg.media_geral).toFixed(1) : '—');
 
-    _renderDesempenhoNivel(data?.por_nivel ?? []);
+    const taxa = eg.taxa_aprovacao_percentual;
+    _setEl('rel-taxa-aprovacao',
+      taxa != null ? Number(taxa).toFixed(1) + '%' : '—');
 
-    // Liga filtro de nível
-    const sel = document.getElementById('rel-filtro-nivel');
-    if (sel) {
-      sel.onchange = () => _filtrarDesempenhoNivel(data?.por_nivel ?? [], sel.value);
+    const sub = document.getElementById('rel-sub-aprovados');
+    if (sub && eg.aprovados != null) {
+      sub.textContent = `${eg.aprovados} aprovados / ${eg.reprovados ?? 0} reprovados`;
+    }
+
+    // ── Desempenho por nível ─────────────────────────────
+    _renderTabelaDesempenho(
+      'rel-desempenho-lista',
+      data.distribuicao_por_nivel ?? [],
+      ['Nível', 'Alunos', 'Tentativas', 'Média', 'Aprovação'],
+      r => [
+        `<td class="td-name">${nivelLabel(r.nivel)}</td>`,
+        `<td class="td-muted">${r.total_alunos ?? '—'}</td>`,
+        `<td class="td-muted">${r.total_tentativas ?? '—'}</td>`,
+        `<td><strong>${r.media_notas != null ? Number(r.media_notas).toFixed(1) : '—'}</strong></td>`,
+        `<td>${_badgeTaxa(r.taxa_aprovacao_percentual)}</td>`,
+      ]
+    );
+
+    // ── Desempenho por série ─────────────────────────────
+    _renderTabelaDesempenho(
+      'rel-desempenho-serie',
+      data.distribuicao_por_serie ?? [],
+      ['Série', 'Alunos', 'Tentativas', 'Média', 'Aprovação'],
+      r => [
+        `<td class="td-name">${r.serie || '—'}</td>`,
+        `<td class="td-muted">${r.total_alunos ?? '—'}</td>`,
+        `<td class="td-muted">${r.total_tentativas ?? '—'}</td>`,
+        `<td><strong>${r.media_notas != null ? Number(r.media_notas).toFixed(1) : '—'}</strong></td>`,
+        `<td>${_badgeTaxa(r.taxa_aprovacao_percentual)}</td>`,
+      ]
+    );
+
+    // ── Detalhes por prova ───────────────────────────────
+    const provas  = data.detalhes_por_prova ?? [];
+    const badgeEl = document.getElementById('rel-total-provas-badge');
+    if (badgeEl) badgeEl.textContent = provas.length ? `${provas.length} provas` : '';
+
+    const tbody = document.getElementById('rel-provas-tbody');
+    if (tbody) {
+      tbody.innerHTML = provas.length
+        ? provas.map(p => `
+            <tr>
+              <td class="td-name">${p.prova_titulo || '—'}</td>
+              <td>${badgeTipoProva(p.tipo)}</td>
+              <td class="td-muted">${nivelLabel(p.nivel)}</td>
+              <td class="td-muted">${p.total_tentativas ?? '—'}</td>
+              <td><strong>${p.media_notas != null ? Number(p.media_notas).toFixed(1) : '—'}</strong></td>
+              <td>${_badgeTaxa(p.taxa_aprovacao_percentual)}</td>
+            </tr>`).join('')
+        : `<tr><td colspan="6" class="table-empty">Nenhuma prova encontrada com estes filtros.</td></tr>`;
     }
 
   } catch (err) {
-    showToast('Erro ao carregar relatório.', 'danger');
-    _setEl('rel-provas-finalizadas', '—');
-    _setEl('rel-certificados', '—');
-    _setEl('rel-media', '—');
+    showToast('Erro ao carregar relatório: ' + (err.message || ''), 'danger');
+    ['rel-total-tentativas','rel-certificados','rel-media','rel-taxa-aprovacao'].forEach(id =>
+      _setEl(id, '—'));
   } finally {
-    setLoading(false);
+    if (btnAplicar) { btnAplicar.disabled = false; btnAplicar.textContent = 'Aplicar filtros'; }
   }
 }
 
-function _renderDesempenhoNivel(porNivel) {
-  const el = document.getElementById('rel-desempenho-lista');
-  if (!porNivel.length) {
-    el.innerHTML = `<div class="table-empty">Sem dados de desempenho ainda.</div>`;
+/** Renderiza uma tabela de desempenho genérica num container */
+function _renderTabelaDesempenho(containerId, lista, headers, rowFn) {
+  const el = document.getElementById(containerId);
+  if (!el) return;
+
+  if (!lista.length) {
+    el.innerHTML = `<div class="table-empty" style="padding:16px;">Sem dados para este filtro.</div>`;
     return;
   }
 
   el.innerHTML = `
     <div class="table-wrapper">
       <table>
-        <thead>
-          <tr>
-            <th>Nível</th>
-            <th>Tentativas</th>
-            <th>Média</th>
-            <th>Taxa aprovação</th>
-          </tr>
-        </thead>
-        <tbody id="rel-desempenho-tbody">
-          ${porNivel.map(r => `
-            <tr data-nivel="${r.nivel || ''}">
-              <td class="td-name">${nivelLabel(r.nivel)}</td>
-              <td class="td-muted">${r.total_tentativas ?? '—'}</td>
-              <td><strong>${r.media != null ? Number(r.media).toFixed(1) : '—'}</strong></td>
-              <td>
-                <span class="badge ${(r.taxa_aprovacao ?? 0) >= 60 ? 'badge-aprovado' : 'badge-reprovado'}">
-                  ${r.taxa_aprovacao != null ? Number(r.taxa_aprovacao).toFixed(0) + '%' : '—'}
-                </span>
-              </td>
-            </tr>`).join('')}
+        <thead><tr>${headers.map(h => `<th>${h}</th>`).join('')}</tr></thead>
+        <tbody>
+          ${lista.map(r => `<tr>${rowFn(r).join('')}</tr>`).join('')}
         </tbody>
       </table>
     </div>`;
 }
 
-function _filtrarDesempenhoNivel(porNivel, nivel) {
-  const filtrado = nivel ? porNivel.filter(r => r.nivel === nivel) : porNivel;
-  _renderDesempenhoNivel(filtrado);
+/** Badge colorido para taxa de aprovação */
+function _badgeTaxa(taxa) {
+  if (taxa == null) return '<span class="td-muted">—</span>';
+  const cls = taxa >= 60 ? 'badge-aprovado' : 'badge-reprovado';
+  return `<span class="badge ${cls}">${Number(taxa).toFixed(0)}%</span>`;
 }
 
-async function exportarRelatorio(tipo = 'desempenho') {
-  const btn = document.getElementById('btn-exportar');
-  if (btn) { btn.disabled = true; btn.textContent = 'Gerando...'; }
+/** Exporta relatório com os filtros ativos e formato selecionado (US29 / US35) */
+async function exportarRelatorio() {
+  const btn     = document.getElementById('btn-exportar');
+  const formato = document.getElementById('rel-formato-export')?.value || 'excel';
+  const ext     = formato === 'excel' ? 'xlsx' : 'csv';
+
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Gerando...'; }
 
   try {
+    const qs    = _relQueryParams();
+    // Adiciona parâmetro formato à query string
+    const sep   = qs ? '&' : '?';
+    const url   = `${API_BASE}/relatorios/exportar${qs}${sep}formato=${formato}`;
     const token = getToken();
-    const url   = `${API_BASE}/relatorios/exportar?tipo=${tipo}`;
-    const resp  = await fetch(url, {
+
+    const resp = await fetch(url, {
       headers: { 'Authorization': `Bearer ${token}` },
     });
 
-    if (!resp.ok) throw new Error('Falha ao gerar exportação.');
+    if (!resp.ok) {
+      const err = await resp.json().catch(() => ({}));
+      throw new Error(err.detail || 'Falha ao gerar exportação.');
+    }
 
     const blob = await resp.blob();
     const link = document.createElement('a');
     link.href  = URL.createObjectURL(blob);
-    link.download = `relatorio_${tipo}_${new Date().toISOString().slice(0,10)}.csv`;
+    link.download = `relatorio_desempenho_${new Date().toISOString().slice(0,10)}.${ext}`;
+    document.body.appendChild(link);
     link.click();
+    document.body.removeChild(link);
     URL.revokeObjectURL(link.href);
-    showToast('Relatório exportado com sucesso!', 'success');
+    showToast(`Relatório exportado (${ext.toUpperCase()})!`, 'success');
 
   } catch (err) {
     showToast(err.message || 'Erro ao exportar.', 'danger');
   } finally {
-    if (btn) { btn.disabled = false; btn.textContent = 'Exportar dados'; }
+    if (btn) { btn.disabled = false; btn.textContent = '⬇ Exportar relatório'; }
   }
 }
 
 /* ─────────────────────────────────────────
-   14. MODAL DE CONFIRMAÇÃO GENÉRICO
+   15. MODAL DE CONFIRMAÇÃO GENÉRICO
    ─────────────────────────────────────── */
 
 /**
@@ -1243,7 +2373,7 @@ function confirmarExclusao(titulo, msg, callback) {
 }
 
 /* ─────────────────────────────────────────
-   15. CONFIGURAÇÃO DOS FILTROS (event listeners)
+   16. CONFIGURAÇÃO DOS FILTROS (event listeners)
    ─────────────────────────────────────── */
 
 function configurarFiltros() {
@@ -1272,10 +2402,20 @@ function configurarFiltros() {
   // Componentes curriculares (US36)
   const compBusca = document.getElementById('comp-busca');
   if (compBusca) compBusca.addEventListener('input', debounce(_filtrarComponentes, 250));
+
+  // Reservas (US27)
+  const resBusca  = document.getElementById('reservas-busca');
+  const resStatus = document.getElementById('reservas-filtro-status');
+  if (resBusca)  resBusca.addEventListener('input', debounce(_filtrarReservas, 250));
+  if (resStatus) resStatus.addEventListener('change', _filtrarReservas);
+
+  // Exportar PDF (aplicação presencial)
+  const expBusca = document.getElementById('exportar-busca-aluno');
+  if (expBusca) expBusca.addEventListener('input', debounce(_filtrarAlunosExportar, 200));
 }
 
 /* ─────────────────────────────────────────
-   16. HELPERS LOCAIS
+   17. HELPERS LOCAIS
    ─────────────────────────────────────── */
 
 /** Define o textContent de um elemento pelo ID, sem lançar erro. */

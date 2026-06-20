@@ -81,7 +81,7 @@ def listar_provas_aluno(
         db.query(models.Tentativa.prova_id)
         .filter(
             models.Tentativa.aluno_id == aluno.id,
-            models.Tentativa.status.in_(["CONCLUIDA", "EM_ANDAMENTO"]),
+            models.Tentativa.status.in_(["CONCLUIDA", "EM_ANDAMENTO", "PAUSADO"]),
         )
         .subquery()
     )
@@ -201,7 +201,7 @@ def editar_prova(prova_id: int, dados: schemas.ProvaUpdate, db: Session) -> mode
             detail="Não é possível editar uma prova enquanto alunos estão realizando-a.",
         )
 
-    for campo, valor in dados.dict(exclude_unset=True).items():
+    for campo, valor in dados.model_dump(exclude_unset=True).items():
         setattr(prova, campo, valor)
 
     db.commit()
