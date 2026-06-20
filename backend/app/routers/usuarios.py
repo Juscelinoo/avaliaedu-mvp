@@ -239,16 +239,22 @@ def deletar_usuario(
     response_model=schemas.UsuarioResponse,
     summary="Aluno atualiza seu próprio nível e série (US30)",
 )
+
 def atualizar_meu_perfil(
     dados: schemas.AlunoPatchPerfil,
     db: Session = Depends(get_db),
     usuario: models.Usuario = Depends(get_usuario_atual),
 ):
-    """Permite ao aluno alterar seu nível de ensino e série a qualquer momento."""
+    """Permite ao aluno alterar seu nível de ensino, série, nome e senha a qualquer momento."""
+    if dados.nome is not None:
+        usuario.nome = dados.nome
     if dados.nivel:
         usuario.nivel = dados.nivel
     if dados.serie is not None:
         usuario.serie = dados.serie
+    if dados.senha:
+        from app.security import hash_senha
+        usuario.senha_hash = hash_senha(dados.senha)
     db.commit()
     db.refresh(usuario)
     return usuario

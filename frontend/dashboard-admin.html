@@ -57,11 +57,27 @@
           </a>
         </li>
         <li>
+          <a href="#" data-section="reservas" class="nav-link">
+            <svg class="nav-icon" viewBox="0 0 20 20" fill="currentColor">
+              <path fill-rule="evenodd" d="M6 2a1 1 0 00-1 1v1H4a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V6a2 2 0 00-2-2h-1V3a1 1 0 10-2 0v1H7V3a1 1 0 00-1-1zM4 8h12v8H4V8z" clip-rule="evenodd"/>
+            </svg>
+            <span>Reservas</span>
+          </a>
+        </li>
+        <li>
           <a href="#" data-section="componentes" class="nav-link">
             <svg class="nav-icon" viewBox="0 0 20 20" fill="currentColor">
               <path d="M9 4.804A7.968 7.968 0 005.5 4c-1.255 0-2.443.29-3.5.804v10A7.969 7.969 0 015.5 14c1.669 0 3.218.51 4.5 1.385A7.962 7.962 0 0114.5 14c1.255 0 2.443.29 3.5.804v-10A7.968 7.968 0 0014.5 4c-1.255 0-2.443.29-3.5.804V12a1 1 0 11-2 0V4.804z"/>
             </svg>
             <span>Componentes</span>
+          </a>
+        </li>
+        <li>
+          <a href="#" data-section="modelos" class="nav-link">
+            <svg class="nav-icon" viewBox="0 0 20 20" fill="currentColor">
+              <path fill-rule="evenodd" d="M3 3a1 1 0 011-1h3a1 1 0 011 1v3a1 1 0 01-1 1H4a1 1 0 01-1-1V3zm9 0a1 1 0 011-1h3a1 1 0 011 1v3a1 1 0 01-1 1h-3a1 1 0 01-1-1V3zm-9 9a1 1 0 011-1h3a1 1 0 011 1v3a1 1 0 01-1 1H4a1 1 0 01-1-1v-3zm9 0a1 1 0 011-1h3a1 1 0 011 1v3a1 1 0 01-1 1h-3a1 1 0 01-1-1v-3z" clip-rule="evenodd"/>
+            </svg>
+            <span>Modelos de questão</span>
           </a>
         </li>
         <li>
@@ -257,6 +273,7 @@
           <p class="page-subtitle" id="questoes-prova-sub">Gerencie as questões desta prova.</p>
         </div>
         <div class="page-header-actions">
+          <button class="btn btn-secondary" onclick="abrirModalGerarQuestoes()">Gerar automaticamente</button>
           <button class="btn btn-primary" onclick="abrirModalNovaQuestao()">+ Adicionar questão</button>
           <div class="user-avatar">?</div>
         </div>
@@ -277,6 +294,7 @@
           <p class="page-subtitle">Cadastro, filtros e ações para alunos e administradores.</p>
         </div>
         <div class="page-header-actions">
+          <button class="btn btn-secondary" onclick="abrirModalImportar()">⬆ Importar CSV / Excel</button>
           <button class="btn btn-primary" onclick="abrirModalNovoUsuario()">+ Cadastrar usuário</button>
           <div class="user-avatar">?</div>
         </div>
@@ -373,6 +391,52 @@
       </div>
     </section>
 
+    <!-- ─── SEÇÃO: RESERVAS ─── -->
+    <section id="section-reservas" class="dash-section hidden">
+      <header class="page-header">
+        <div class="page-header-left">
+          <h1 class="page-title">Reservas de vagas presenciais</h1>
+          <p class="page-subtitle">Acompanhe as reservas feitas pelos alunos para provas presenciais.</p>
+        </div>
+      </header>
+
+      <div class="page-content">
+        <div class="filter-bar">
+          <div class="input-search" style="flex:1; min-width:220px;">
+            <span class="input-search-icon">🔍</span>
+            <input class="form-input" type="search" id="reservas-busca" placeholder="Buscar por aluno, e-mail ou prova...">
+          </div>
+          <select class="form-select" id="reservas-filtro-status" style="max-width:180px;">
+            <option value="">Todos os status</option>
+            <option value="ATIVA">Ativa</option>
+            <option value="UTILIZADA">Utilizada</option>
+            <option value="CANCELADA">Cancelada</option>
+            <option value="EXPIRADA">Expirada</option>
+          </select>
+        </div>
+
+        <div class="card" style="padding:0;">
+          <div class="table-wrapper">
+            <table>
+              <thead>
+                <tr>
+                  <th>Aluno</th>
+                  <th>Prova</th>
+                  <th>Local</th>
+                  <th>Reservado em</th>
+                  <th>Expira em</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody id="reservas-tbody">
+                <tr><td colspan="6" class="table-empty">Carregando reservas...</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </section>
+
     <!-- ─── SEÇÃO: COMPONENTES CURRICULARES (US36-37) ─── -->
     <section id="section-componentes" class="dash-section hidden">
       <header class="page-header">
@@ -417,98 +481,226 @@
       </div>
     </section>
 
-    <!-- ─── SEÇÃO: RELATÓRIOS ─── -->
-    <section id="section-relatorios" class="dash-section hidden">
+    <!-- ─── SEÇÃO: MODELOS DE QUESTÃO (US11) ─── -->
+    <section id="section-modelos" class="dash-section hidden">
       <header class="page-header">
         <div class="page-header-left">
-          <h1 class="page-title">Relatórios e certificados</h1>
-          <p class="page-subtitle">Painéis de desempenho, emissão de certificados e exportação institucional.</p>
+          <h1 class="page-title">Modelos de questão</h1>
+          <p class="page-subtitle">Banco de templates usado na geração automática de questões (US11).</p>
         </div>
         <div class="page-header-actions">
-          <button class="btn btn-secondary" id="btn-exportar" onclick="exportarRelatorio()">Exportar dados</button>
+          <button class="btn btn-primary" onclick="abrirModalNovoModelo()">+ Novo modelo</button>
           <div class="user-avatar">?</div>
         </div>
       </header>
 
       <div class="page-content">
-        <!-- Métricas -->
-        <div class="metric-grid" id="rel-metrics">
+        <div class="filter-bar">
+          <div class="form-select-wrap">
+            <select class="form-select" id="modelos-filtro-nivel" style="width:160px;" onchange="carregarModelos()">
+              <option value="">Todos os níveis</option>
+              <option value="FUNDAMENTAL_I">Fundamental I</option>
+              <option value="FUNDAMENTAL_II">Fundamental II</option>
+              <option value="MEDIO">Médio</option>
+              <option value="ENEM">ENEM</option>
+              <option value="EJA">EJA</option>
+            </select>
+          </div>
+          <div class="form-select-wrap">
+            <select class="form-select" id="modelos-filtro-dificuldade" style="width:160px;" onchange="carregarModelos()">
+              <option value="">Todas as dificuldades</option>
+              <option value="FACIL">Fácil</option>
+              <option value="MEDIO">Médio</option>
+              <option value="DIFICIL">Difícil</option>
+            </select>
+          </div>
+          <div class="form-select-wrap">
+            <select class="form-select" id="modelos-filtro-componente" style="width:200px;" onchange="carregarModelos()">
+              <option value="">Todos os componentes</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="card" style="padding:0;">
+          <div class="table-wrapper">
+            <table>
+              <thead>
+                <tr>
+                  <th>Modelo</th>
+                  <th>Nível</th>
+                  <th>Dificuldade</th>
+                  <th>Componente</th>
+                  <th>Variáveis</th>
+                  <th>Ações</th>
+                </tr>
+              </thead>
+              <tbody id="modelos-tbody">
+                <tr><td colspan="6" class="table-empty">Carregando modelos...</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Input oculto compartilhado para upload de imagem de modelo (US11) -->
+    <input type="file" id="modelo-imagem-input" accept="image/png,image/jpeg,image/webp" hidden
+      onchange="_uploadImagemSelecionada(event)">
+    <input type="file" id="questao-imagem-input" accept="image/png,image/jpeg,image/webp" hidden
+      onchange="_uploadImagemQuestaoSelecionada(event)">
+    <input type="file" id="alternativa-imagem-input" accept="image/png,image/jpeg,image/webp" hidden
+      onchange="_uploadImagemAlternativaSelecionada(event)">
+
+    <!-- ─── SEÇÃO: RELATÓRIOS ─── -->
+    <section id="section-relatorios" class="dash-section hidden">
+      <header class="page-header">
+        <div class="page-header-left">
+          <h1 class="page-title">Relatórios</h1>
+          <p class="page-subtitle">Desempenho por nível, detalhes por prova e exportação de dados.</p>
+        </div>
+      </header>
+
+      <div class="page-content">
+
+        <!-- ── Painel de filtros ── -->
+        <div class="card" style="margin-bottom:20px;">
+          <div class="card-title" style="margin-bottom:14px;">Filtros do relatório</div>
+          <div style="display:grid; grid-template-columns:1fr 1fr 1fr 1fr; gap:12px; align-items:end;">
+            <div class="form-group" style="margin:0;">
+              <label class="form-label">Data início</label>
+              <input class="form-input" type="date" id="rel-data-inicio">
+            </div>
+            <div class="form-group" style="margin:0;">
+              <label class="form-label">Data fim</label>
+              <input class="form-input" type="date" id="rel-data-fim">
+            </div>
+            <div class="form-group" style="margin:0;">
+              <label class="form-label">Nível</label>
+              <select class="form-select" id="rel-filtro-nivel">
+                <option value="">Todos os níveis</option>
+                <option value="FUNDAMENTAL_I">Fundamental I</option>
+                <option value="FUNDAMENTAL_II">Fundamental II</option>
+                <option value="MEDIO">Médio</option>
+                <option value="ENEM">ENEM</option>
+                <option value="EJA">EJA</option>
+              </select>
+            </div>
+            <div class="form-group" style="margin:0;">
+              <label class="form-label">Série</label>
+              <input class="form-input" type="text" id="rel-filtro-serie" placeholder="Ex: 9º Ano">
+            </div>
+          </div>
+          <div style="display:flex; justify-content:flex-end; gap:8px; margin-top:14px;">
+            <button class="btn btn-ghost btn-sm" onclick="limparFiltrosRelatorio()">Limpar</button>
+            <button class="btn btn-primary btn-sm" id="btn-aplicar-filtros" onclick="aplicarFiltrosRelatorio()">
+              Aplicar filtros
+            </button>
+          </div>
+        </div>
+
+        <!-- ── Métricas gerais ── -->
+        <div class="metric-grid" style="grid-template-columns:repeat(4,1fr); margin-bottom:20px;">
           <div class="metric-card">
             <div class="metric-card-header">
-              <span class="metric-label">Provas finalizadas</span>
-              <span class="badge badge-publicada">Base</span>
+              <span class="metric-label">Tentativas</span>
+              <span class="badge badge-publicada">Total</span>
             </div>
-            <div class="metric-value primary" id="rel-provas-finalizadas">—</div>
-            <div class="metric-sub">Base consolidada</div>
+            <div class="metric-value primary" id="rel-total-tentativas">—</div>
+            <div class="metric-sub" id="rel-sub-aprovados">—</div>
           </div>
           <div class="metric-card">
             <div class="metric-card-header">
-              <span class="metric-label">Certificados emitidos</span>
-              <span class="badge badge-certificacao">Cert.</span>
+              <span class="metric-label">Taxa de aprovação</span>
+              <span class="badge badge-simulado">Geral</span>
             </div>
-            <div class="metric-value success" id="rel-certificados">—</div>
-            <div class="metric-sub">Validação pública ativa</div>
+            <div class="metric-value ia" id="rel-taxa-aprovacao">—</div>
+            <div class="metric-sub">Aprovados / Total</div>
           </div>
           <div class="metric-card">
             <div class="metric-card-header">
               <span class="metric-label">Média geral</span>
               <span class="badge badge-simulado">Notas</span>
             </div>
-            <div class="metric-value ia" id="rel-media">—</div>
+            <div class="metric-value primary" id="rel-media">—</div>
             <div class="metric-sub">Rede estadual</div>
           </div>
+          <div class="metric-card">
+            <div class="metric-card-header">
+              <span class="metric-label">Certificados</span>
+              <span class="badge badge-certificacao">Emitidos</span>
+            </div>
+            <div class="metric-value success" id="rel-certificados">—</div>
+            <div class="metric-sub">Validação pública ativa</div>
+          </div>
         </div>
 
-        <!-- Desempenho + Exportações -->
-        <div class="two-col">
-          <div class="card">
-            <div class="card-header">
-              <div>
-                <div class="card-title">Desempenho por nível</div>
-                <div class="card-subtitle">Recorte por nível e período.</div>
-              </div>
-              <div class="form-select-wrap">
-                <select class="form-select" id="rel-filtro-nivel" style="width:160px;">
-                  <option value="">Todos os níveis</option>
-                  <option value="FUNDAMENTAL_I">Fundamental I</option>
-                  <option value="FUNDAMENTAL_II">Fundamental II</option>
-                  <option value="MEDIO">Médio</option>
-                  <option value="ENEM">ENEM</option>
-                  <option value="EJA">EJA</option>
-                </select>
-              </div>
+        <!-- ── Desempenho por nível + por série ── -->
+        <div class="two-col" style="margin-bottom:20px;">
+          <div class="card" style="padding:0;">
+            <div style="padding:16px 20px; border-bottom:1px solid var(--c-border);">
+              <div class="card-title">Desempenho por nível</div>
             </div>
             <div id="rel-desempenho-lista">
-              <div class="table-empty">Carregando desempenho...</div>
+              <div class="table-empty">Carregando...</div>
             </div>
           </div>
-
-          <div class="card">
-            <div class="card-title" style="margin-bottom:8px;">Recortes exportáveis</div>
-            <div class="card-subtitle">Tabelas para gestão pedagógica e auditoria.</div>
-            <div class="table-wrapper" style="margin-top:16px;">
-              <table>
-                <thead>
-                  <tr><th>Recorte</th><th>Descrição</th><th>Formato</th><th>Ação</th></tr>
-                </thead>
-                <tbody>
-                  <tr>
-                    <td class="td-name">Notas por usuário</td>
-                    <td class="td-muted">Boletim consolidado por aluno e prova</td>
-                    <td>CSV</td>
-                    <td><button class="btn btn-ghost btn-sm" onclick="exportarRelatorio('desempenho')">Exportar</button></td>
-                  </tr>
-                  <tr>
-                    <td class="td-name">Certificados emitidos</td>
-                    <td class="td-muted">Relação com código público de validação</td>
-                    <td>CSV</td>
-                    <td><button class="btn btn-ghost btn-sm" onclick="exportarRelatorio('certificados')">Exportar</button></td>
-                  </tr>
-                </tbody>
-              </table>
+          <div class="card" style="padding:0;">
+            <div style="padding:16px 20px; border-bottom:1px solid var(--c-border);">
+              <div class="card-title">Desempenho por série</div>
+            </div>
+            <div id="rel-desempenho-serie">
+              <div class="table-empty">Carregando...</div>
             </div>
           </div>
         </div>
+
+        <!-- ── Detalhes por prova ── -->
+        <div class="card" style="padding:0; margin-bottom:20px;">
+          <div style="padding:16px 20px; border-bottom:1px solid var(--c-border); display:flex; align-items:center; justify-content:space-between;">
+            <div class="card-title">Desempenho por prova</div>
+            <span class="badge badge-simulado" id="rel-total-provas-badge"></span>
+          </div>
+          <div class="table-wrapper">
+            <table>
+              <thead>
+                <tr>
+                  <th>Prova</th>
+                  <th>Tipo</th>
+                  <th>Nível</th>
+                  <th>Tentativas</th>
+                  <th>Média</th>
+                  <th>Aprovação</th>
+                </tr>
+              </thead>
+              <tbody id="rel-provas-tbody">
+                <tr><td colspan="6" class="table-empty">Carregando...</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- ── Exportação ── -->
+        <div class="card">
+          <div class="card-title" style="margin-bottom:4px;">Exportar dados</div>
+          <div class="card-subtitle" style="margin-bottom:16px;">
+            Os filtros aplicados acima são usados na exportação.
+          </div>
+          <div style="display:flex; align-items:center; gap:12px; flex-wrap:wrap;">
+            <div class="form-group" style="margin:0;">
+              <label class="form-label">Formato</label>
+              <select class="form-select" id="rel-formato-export" style="width:130px;">
+                <option value="excel">Excel (.xlsx)</option>
+                <option value="csv">CSV (.csv)</option>
+              </select>
+            </div>
+            <div style="padding-top:20px;">
+              <button class="btn btn-primary" id="btn-exportar" onclick="exportarRelatorio()">
+                ⬇ Exportar relatório
+              </button>
+            </div>
+          </div>
+        </div>
+
       </div>
     </section>
 
@@ -587,6 +779,17 @@
           <input class="form-input" type="datetime-local" id="prova-inscricao-fim">
         </div>
       </div>
+      <!-- NOVO — US37: checklist de componentes curriculares vinculados -->
+      <div class="form-group" style="margin-top:4px;">
+        <label class="form-label">Componentes curriculares</label>
+        <p style="font-size:12px; color:var(--c-text-muted); margin:0 0 8px;">
+          Disciplinas avaliadas por esta prova (US37). O vínculo é salvo na hora — não precisa clicar em "Salvar prova".
+        </p>
+        <div id="prova-componentes-checklist"
+          style="display:flex; flex-wrap:wrap; gap:8px; border:1px solid var(--c-border); border-radius:8px; padding:10px; max-height:160px; overflow-y:auto;">
+          <span class="table-empty" style="padding:4px;">Carregando componentes...</span>
+        </div>
+      </div>
     </div>
     <div class="modal-footer">
       <button class="btn btn-ghost" data-close-modal="modal-prova">Cancelar</button>
@@ -610,6 +813,13 @@
       <div class="form-group" style="margin-bottom:20px;">
         <label class="form-label required" for="questao-enunciado">Enunciado</label>
         <textarea class="form-textarea" id="questao-enunciado" rows="4" placeholder="Digite o enunciado completo da questão..."></textarea>
+        <div style="display:flex; align-items:center; gap:10px; margin-top:8px;">
+          <img id="questao-imagem-preview" src="" alt="Imagem da questão"
+            style="display:none; max-height:60px; border-radius:6px; border:1px solid var(--c-border);">
+          <button type="button" class="btn btn-ghost btn-sm" id="btn-questao-imagem"
+            onclick="dispararUploadImagemQuestao()">🖼 Adicionar imagem</button>
+          <span style="font-size:12px; color:var(--c-text-muted);">PNG, JPG ou WEBP, máx. 5MB</span>
+        </div>
       </div>
       <div style="display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-bottom:20px;">
         <div class="form-group">
@@ -644,6 +854,55 @@
     <div class="modal-footer">
       <button class="btn btn-ghost" data-close-modal="modal-questao">Cancelar</button>
       <button class="btn btn-primary" onclick="salvarQuestao()">Salvar questão</button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════
+     MODAL: GERAR QUESTÕES AUTOMATICAMENTE (US11)
+═══════════════════════════════════════ -->
+<div class="modal-overlay" id="modal-gerar-questoes">
+  <div class="modal">
+    <div class="modal-header">
+      <h2 class="modal-title">Gerar questões automaticamente</h2>
+      <button class="modal-close" data-close-modal="modal-gerar-questoes">✕</button>
+    </div>
+    <div class="modal-body">
+      <input type="hidden" id="gerar-prova-id">
+      <p class="card-subtitle" style="margin-bottom:20px;">
+        As questões são geradas a partir dos modelos cadastrados em
+        <strong>Modelos de questão</strong>. O nível é herdado automaticamente da prova.
+      </p>
+      <div class="form-group" style="margin-bottom:20px;">
+        <label class="form-label required" for="gerar-quantidade">Quantidade de questões</label>
+        <input class="form-input" type="number" id="gerar-quantidade" min="1" value="10">
+      </div>
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:16px;">
+        <div class="form-group">
+          <label class="form-label" for="gerar-dificuldade">Dificuldade</label>
+          <div class="form-select-wrap">
+            <select class="form-select" id="gerar-dificuldade">
+              <option value="">Qualquer dificuldade</option>
+              <option value="FACIL">Fácil</option>
+              <option value="MEDIO">Médio</option>
+              <option value="DIFICIL">Difícil</option>
+            </select>
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="gerar-componente">Componente curricular</label>
+          <div class="form-select-wrap">
+            <select class="form-select" id="gerar-componente">
+              <option value="">Qualquer componente</option>
+              <!-- Preenchido dinamicamente por carregarComponentesSelect() -->
+            </select>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" data-close-modal="modal-gerar-questoes">Cancelar</button>
+      <button class="btn btn-primary" onclick="gerarQuestoesAutomaticamente()">Gerar questões</button>
     </div>
   </div>
 </div>
@@ -710,6 +969,185 @@
     <div class="modal-footer">
       <button class="btn btn-ghost" data-close-modal="modal-usuario">Cancelar</button>
       <button class="btn btn-primary" onclick="salvarUsuario()">Cadastrar</button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════
+     MODAL: IMPORTAR ALUNOS (US33)
+═══════════════════════════════════════ -->
+<div class="modal-overlay" id="modal-importar">
+  <div class="modal modal-lg">
+    <div class="modal-header">
+      <h2 class="modal-title">Importar alunos — CSV / Excel</h2>
+      <button class="modal-close" data-close-modal="modal-importar">✕</button>
+    </div>
+    <div class="modal-body">
+
+      <!-- ── Fase 1: Seleção do arquivo ── -->
+      <div id="importar-fase-upload">
+
+        <!-- Dica de colunas + botão de modelo -->
+        <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:12px; padding:12px 16px; background:var(--c-surface-2,#f4f6fa); border-radius:8px; margin-bottom:16px;">
+          <div style="font-size:13px; color:var(--c-text-muted);">
+            Obrigatórias:&nbsp;
+            <code style="background:var(--c-surface-3,#eef1f7); padding:2px 6px; border-radius:4px; font-size:12px;">nome</code>&nbsp;
+            <code style="background:var(--c-surface-3,#eef1f7); padding:2px 6px; border-radius:4px; font-size:12px;">email</code>&nbsp;
+            <code style="background:var(--c-surface-3,#eef1f7); padding:2px 6px; border-radius:4px; font-size:12px;">nivel</code>&nbsp;&nbsp;
+            Opcional:&nbsp;
+            <code style="background:var(--c-surface-3,#eef1f7); padding:2px 6px; border-radius:4px; font-size:12px;">serie</code>
+          </div>
+          <button class="btn btn-ghost btn-sm" onclick="baixarModeloImportacao()">⬇ Baixar modelo</button>
+        </div>
+
+        <!-- Área de drag-and-drop -->
+        <div id="importar-drop-zone"
+          style="border:2px dashed var(--c-border,#d1d5db); border-radius:12px; padding:40px 24px; text-align:center; cursor:pointer; transition:border-color .15s, background .15s;"
+          onclick="document.getElementById('importar-arquivo-input').click()"
+          ondragover="event.preventDefault(); this.style.borderColor='var(--c-primary,#3b82f6)'; this.style.background='var(--c-surface-2,#f4f6fa)';"
+          ondragleave="this.style.borderColor='var(--c-border,#d1d5db)'; this.style.background='transparent';"
+          ondrop="importarHandleDrop(event)">
+          <div style="font-size:36px; margin-bottom:12px; pointer-events:none;">📂</div>
+          <div style="font-size:15px; font-weight:600; color:var(--c-text); margin-bottom:4px; pointer-events:none;">Arraste o arquivo aqui</div>
+          <div style="font-size:13px; color:var(--c-text-muted); pointer-events:none;">ou clique para selecionar</div>
+          <div style="margin-top:8px; font-size:12px; color:var(--c-text-muted); pointer-events:none;">.csv ou .xlsx · máximo 5 MB</div>
+        </div>
+        <input type="file" id="importar-arquivo-input" accept=".csv,.xlsx,.xls" style="display:none;" onchange="importarArquivoSelecionado(this)">
+
+        <!-- Preview do arquivo selecionado -->
+        <div id="importar-arquivo-preview"
+          style="display:none; margin-top:12px; padding:12px 16px; background:var(--c-surface-2,#f4f6fa); border-radius:8px; align-items:center; justify-content:space-between; gap:8px;">
+          <div style="display:flex; align-items:center; gap:10px;">
+            <span style="font-size:22px;">📄</span>
+            <div>
+              <div id="importar-preview-nome" style="font-size:13px; font-weight:600; color:var(--c-text);">—</div>
+              <div id="importar-preview-tamanho" style="font-size:12px; color:var(--c-text-muted);">—</div>
+            </div>
+          </div>
+          <button class="btn btn-ghost btn-sm" onclick="importarLimparArquivo()" title="Remover arquivo">✕</button>
+        </div>
+      </div>
+
+      <!-- ── Fase 2: Resultado da importação ── -->
+      <div id="importar-fase-resultado" style="display:none;">
+
+        <!-- Cards de resumo -->
+        <div class="metric-grid" style="grid-template-columns:repeat(4,1fr); margin-bottom:24px;" id="importar-resumo-cards"></div>
+
+        <!-- Tabela de importados + senhas provisórias -->
+        <div id="importar-bloco-importados" style="display:none; margin-bottom:16px;">
+          <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:8px;">
+            <span style="font-size:13px; font-weight:600; color:var(--c-success,#16a34a);">✓ Alunos importados com sucesso</span>
+            <button class="btn btn-ghost btn-sm" onclick="importarCopiarSenhas()">Copiar senhas (TSV)</button>
+          </div>
+          <div class="table-wrapper">
+            <table>
+              <thead>
+                <tr>
+                  <th>Nome</th><th>E-mail</th><th>Nível</th><th>Série</th><th>Senha provisória</th>
+                </tr>
+              </thead>
+              <tbody id="importar-importados-tbody"></tbody>
+            </table>
+          </div>
+          <p style="font-size:12px; color:var(--c-text-muted); margin-top:8px;">
+            ⚠ Guarde as senhas provisórias agora — não será possível recuperá-las depois.
+          </p>
+        </div>
+
+        <!-- Duplicados (collapsible) -->
+        <div id="importar-bloco-duplicados" style="display:none; margin-bottom:12px;">
+          <details>
+            <summary style="font-size:13px; font-weight:600; color:var(--c-warning,#d97706); cursor:pointer; padding:8px 0; list-style:none;">
+              ⚠ Duplicados — e-mails já existentes no sistema (clique para expandir)
+            </summary>
+            <div class="table-wrapper" style="margin-top:8px;">
+              <table>
+                <thead><tr><th>Linha</th><th>E-mail</th><th>Motivo</th></tr></thead>
+                <tbody id="importar-duplicados-tbody"></tbody>
+              </table>
+            </div>
+          </details>
+        </div>
+
+        <!-- Erros (collapsible) -->
+        <div id="importar-bloco-erros" style="display:none; margin-bottom:12px;">
+          <details>
+            <summary style="font-size:13px; font-weight:600; color:var(--c-danger,#dc2626); cursor:pointer; padding:8px 0; list-style:none;">
+              ✕ Linhas com erro — verifique e corrija no arquivo (clique para expandir)
+            </summary>
+            <div class="table-wrapper" style="margin-top:8px;">
+              <table>
+                <thead><tr><th>Linha</th><th>Nome</th><th>E-mail</th><th>Problema(s)</th></tr></thead>
+                <tbody id="importar-erros-tbody"></tbody>
+              </table>
+            </div>
+          </details>
+        </div>
+
+      </div>
+    </div><!-- /modal-body -->
+
+    <div class="modal-footer" id="importar-modal-footer">
+      <button class="btn btn-ghost" data-close-modal="modal-importar">Cancelar</button>
+      <button class="btn btn-primary" id="btn-processar-importacao" onclick="processarImportacao()" disabled>
+        Importar alunos
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════
+     MODAL: EXPORTAR PROVA EM PDF (aplicação presencial)
+═══════════════════════════════════════ -->
+<div class="modal-overlay" id="modal-exportar-pdf">
+  <div class="modal modal-lg">
+    <div class="modal-header">
+      <h2 class="modal-title" id="modal-exportar-titulo">Gerar PDFs — aplicação presencial</h2>
+      <button class="modal-close" data-close-modal="modal-exportar-pdf">✕</button>
+    </div>
+    <div class="modal-body">
+
+      <!-- Fase 1: seleção de alunos -->
+      <div id="exportar-fase-selecao">
+        <p style="font-size:13px; color:var(--c-text-muted); margin-bottom:14px;">
+          Cada aluno selecionado recebe um PDF individual com questões e alternativas em ordem embaralhada.
+        </p>
+
+        <div class="input-search" style="margin-bottom:10px;">
+          <span class="input-search-icon">🔍</span>
+          <input class="form-input" type="search" id="exportar-busca-aluno" placeholder="Buscar aluno por nome ou e-mail...">
+        </div>
+
+        <label style="display:flex; align-items:center; gap:8px; font-size:13px; font-weight:600; padding:8px 0; cursor:pointer;">
+          <input type="checkbox" id="exportar-selecionar-todos" onchange="exportarToggleTodos(this.checked)">
+          Selecionar todos
+        </label>
+
+        <div id="exportar-lista-alunos"
+          style="max-height:320px; overflow-y:auto; border:1px solid var(--c-border); border-radius:8px; padding:4px;">
+          <div class="table-empty">Carregando alunos...</div>
+        </div>
+      </div>
+
+      <!-- Fase 2: resultado -->
+      <div id="exportar-fase-resultado" style="display:none;">
+        <div class="metric-grid" style="grid-template-columns:repeat(2,1fr); margin-bottom:20px;" id="exportar-resumo-cards"></div>
+        <div class="table-wrapper">
+          <table>
+            <thead><tr><th>Aluno</th><th>Resultado</th></tr></thead>
+            <tbody id="exportar-resultado-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+
+    </div>
+
+    <div class="modal-footer" id="exportar-modal-footer">
+      <button class="btn btn-ghost" data-close-modal="modal-exportar-pdf">Cancelar</button>
+      <button class="btn btn-primary" id="btn-gerar-pdfs" onclick="confirmarExportarPDF()" disabled>
+        Gerar PDFs (0)
+      </button>
     </div>
   </div>
 </div>
@@ -845,6 +1283,91 @@
     <div class="modal-footer">
       <button class="btn btn-ghost" data-close-modal="modal-componente">Cancelar</button>
       <button class="btn btn-primary" onclick="salvarComponente()">Salvar componente</button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════
+     MODAL: NOVO MODELO DE QUESTÃO (US11)
+═══════════════════════════════════════ -->
+<div class="modal-overlay" id="modal-modelo">
+  <div class="modal modal-lg">
+    <div class="modal-header">
+      <h2 class="modal-title">Novo modelo de questão</h2>
+      <button class="modal-close" data-close-modal="modal-modelo">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-group" style="margin-bottom:20px;">
+        <label class="form-label required" for="modelo-texto">Enunciado (template)</label>
+        <textarea class="form-textarea" id="modelo-texto" rows="3"
+          placeholder="Ex: Quanto é {a} + {b}? (use {a+b} no gabarito para calcular automaticamente)"></textarea>
+      </div>
+      <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:16px; margin-bottom:20px;">
+        <div class="form-group">
+          <label class="form-label required" for="modelo-gabarito">Gabarito (correta)</label>
+          <input class="form-input" type="text" id="modelo-gabarito" placeholder="Ex: {a+b}">
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="modelo-distrator-1">Distrator 1</label>
+          <input class="form-input" type="text" id="modelo-distrator-1">
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="modelo-distrator-2">Distrator 2</label>
+          <input class="form-input" type="text" id="modelo-distrator-2">
+        </div>
+      </div>
+      <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:16px; margin-bottom:20px;">
+        <div class="form-group">
+          <label class="form-label" for="modelo-distrator-3">Distrator 3</label>
+          <input class="form-input" type="text" id="modelo-distrator-3">
+        </div>
+        <div class="form-group">
+          <label class="form-label required" for="modelo-nivel">Nível</label>
+          <div class="form-select-wrap">
+            <select class="form-select" id="modelo-nivel">
+              <option value="">Selecione</option>
+              <option value="FUNDAMENTAL_I">Fundamental I</option>
+              <option value="FUNDAMENTAL_II">Fundamental II</option>
+              <option value="MEDIO">Médio</option>
+              <option value="ENEM">ENEM</option>
+              <option value="EJA">EJA</option>
+            </select>
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="modelo-dificuldade">Dificuldade</label>
+          <div class="form-select-wrap">
+            <select class="form-select" id="modelo-dificuldade">
+              <option value="FACIL">Fácil</option>
+              <option value="MEDIO" selected>Médio</option>
+              <option value="DIFICIL">Difícil</option>
+            </select>
+          </div>
+        </div>
+      </div>
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-bottom:20px;">
+        <div class="form-group">
+          <label class="form-label" for="modelo-serie">Série (opcional)</label>
+          <input class="form-input" type="text" id="modelo-serie" placeholder="Ex: 9º Ano, 3ª Série...">
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="modelo-componente">Componente curricular</label>
+          <div class="form-select-wrap">
+            <select class="form-select" id="modelo-componente">
+              <option value="">Nenhum (genérico)</option>
+            </select>
+          </div>
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label" for="modelo-variaveis">Variáveis (JSON opcional)</label>
+        <textarea class="form-textarea" id="modelo-variaveis" rows="2"
+          placeholder='Ex: {"a": [2, 3, 4], "b": [10, 20, 30]}'></textarea>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" data-close-modal="modal-modelo">Cancelar</button>
+      <button class="btn btn-primary" onclick="salvarModelo()">Salvar modelo</button>
     </div>
   </div>
 </div>

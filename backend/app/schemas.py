@@ -46,6 +46,8 @@ class UsuarioResponse(BaseModel):
     nivel: Optional[str] = None
     serie: Optional[str] = None
     status: Optional[str] = None
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
     created_at: Optional[datetime] = None
 
     class Config:
@@ -69,11 +71,13 @@ class AlunoLocalizacao(BaseModel):
     longitude: float = Field(..., ge=-180, le=180, description="Longitude (-180 a 180)")
 
 class AlunoPatchPerfil(BaseModel):
+    nome: Optional[str] = Field(None, min_length=2)
     nivel: Optional[str] = Field(
         None,
         pattern="^(FUNDAMENTAL_I|FUNDAMENTAL_II|MEDIO|ENEM|EJA)$",
     )
     serie: Optional[str] = None
+    senha: Optional[str] = Field(None, min_length=8)
  
 # Provas
 
@@ -106,6 +110,12 @@ class ProvaUpdate(BaseModel):
     data_inicio_inscricao: Optional[datetime] = None
     data_fim_inscricao: Optional[datetime] = None
 
+class ComponenteBasicoResponse(BaseModel):
+    id: int
+    nome: str
+    class Config:
+        from_attributes = True
+
 class ProvaResponse(BaseModel):
     id: int
     titulo: str
@@ -122,6 +132,7 @@ class ProvaResponse(BaseModel):
     data_fim_inscricao: Optional[datetime] = None
     criado_por: Optional[int] = None
     created_at: datetime
+    componentes: list[ComponenteBasicoResponse] = []
 
     class Config:
         from_attributes = True
@@ -356,6 +367,7 @@ class HistoricoCertificacaoResponse(BaseModel):
     nota: Optional[float] = None
     resultado: Optional[str] = None
     certificado_id: Optional[int] = None
+    codigo_validacao: Optional[str] = None
     bloqueio_ate: Optional[date] = None
 
 # Modelos de questão
@@ -514,6 +526,21 @@ class ReservaAdminResponse(BaseModel):
     aluno: Optional[ReservaAlunoInfo] = None
     local: Optional[ReservaLocalInfo] = None
     prova_titulo: Optional[str] = None
+
+    class Config:
+        from_attributes = True
+
+# =============================================================================
+# US44 — Inscrições em provas
+# =============================================================================
+
+class InscricaoResponse(BaseModel):
+    tentativa_id: int
+    prova_id: int
+    tipo: str
+    status: str
+    prova_titulo: Optional[str] = None
+    data_inscricao: Optional[datetime] = None
 
     class Config:
         from_attributes = True
