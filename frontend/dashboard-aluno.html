@@ -285,8 +285,8 @@
             <!-- Narrador de questão (leitura em voz alta — acessibilidade) -->
             <div id="narrador-bar" class="narrador-bar" role="group" aria-label="Leitura em voz alta da questão">
               <button type="button" id="narrador-ouvir" class="narrador-btn narrador-btn-primario" onclick="narrarQuestaoAtual()" aria-label="Ouvir a questão e as alternativas">🔊 Ouvir</button>
-              <button type="button" id="narrador-pausar" class="narrador-btn" onclick="narradorPausarContinuar()" aria-label="Pausar leitura" style="display:none;">⏸ Pausar</button>
-              <button type="button" id="narrador-parar" class="narrador-btn" onclick="Narrador.parar()" aria-label="Parar leitura" style="display:none;">⏹ Parar</button>
+              <button type="button" id="narrador-pausar" class="narrador-btn" onclick="narradorPausarContinuar()" aria-label="Pausar leitura" disabled>⏸ Pausar</button>
+              <button type="button" id="narrador-parar" class="narrador-btn" onclick="narradorParar()" aria-label="Parar leitura" disabled>⏹ Parar</button>
               <span class="narrador-veloc" role="group" aria-label="Velocidade da leitura">
                 <span class="narrador-veloc-label">Velocidade</span>
                 <button type="button" class="narrador-veloc-btn" data-rate="0.7" onclick="narradorSetVeloc(0.7, this)" aria-pressed="false">Devagar</button>

@@ -13,7 +13,8 @@
      Narrador.onEstado(cb)           -> cb('parado' | 'falando' | 'pausado')
    ============================================================ */
 
-const Narrador = (function () {
+// `var` (não `const`) para virar propriedade de window — necessário p/ onclick inline.
+var Narrador = (function () {
   const RATE_KEY = 'avaliaedu_narrador_rate';
   const synth = (typeof window !== 'undefined') ? window.speechSynthesis : null;
 

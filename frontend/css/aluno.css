@@ -630,10 +630,14 @@ body.eja-mode .localidade-card        { padding: 28px 20px; }
   cursor: pointer;
   transition: background .15s, border-color .15s;
 }
-.narrador-btn:hover,
+.narrador-btn:hover:not(:disabled),
 .narrador-btn:focus-visible {
   border-color: var(--c-primary);
   background: var(--c-primary-light);
+}
+.narrador-btn:disabled {
+  opacity: .45;
+  cursor: not-allowed;
 }
 .narrador-btn-primario {
   background: var(--c-primary);

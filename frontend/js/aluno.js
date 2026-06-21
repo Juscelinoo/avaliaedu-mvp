@@ -1956,11 +1956,17 @@ function narradorAtualizarUI(estado) {
   const parar  = document.getElementById('narrador-parar');
   if (!pausar || !parar) return;
   const ativo = (estado === 'falando' || estado === 'pausado');
-  pausar.style.display = ativo ? '' : 'none';
-  parar.style.display  = ativo ? '' : 'none';
+  // sempre visíveis; apenas habilita/desabilita conforme o estado
+  pausar.disabled = !ativo;
+  parar.disabled  = !ativo;
   const pausado = estado === 'pausado';
   pausar.textContent = pausado ? '▶ Continuar' : '⏸ Pausar';
   pausar.setAttribute('aria-label', pausado ? 'Continuar leitura' : 'Pausar leitura');
+}
+
+/** Wrapper para o onclick do botão Parar (Narrador é módulo). */
+function narradorParar() {
+  Narrador.parar();
 }
 
 /** Inicializa a barra do narrador (suporte, estado, velocidade persistida). */
