@@ -169,7 +169,9 @@ async function carregarDashboard() {
 
     const hist  = historico.status  === 'fulfilled' ? historico.value  : [];
     const certsV = certs.status     === 'fulfilled' ? certs.value      : [];
-    const provasV = provas.status   === 'fulfilled' ? provas.value     : [];
+    const provasResp = provas.status === 'fulfilled' ? provas.value : [];
+    // /provas retorna objeto paginado { total, skip, limit, provas: [...] }
+    const provasV = Array.isArray(provasResp) ? provasResp : (provasResp.provas || []);
 
     // Calcula média
     const finalizadas = hist.filter(t => t.nota !== null && t.nota !== undefined);
@@ -224,7 +226,9 @@ async function carregarProvasAluno() {
       apiFetch('/inscricoes/minhas').catch(() => []),
     ]);
 
-    provasDisponiveis = provas;
+    // /provas retorna objeto paginado { total, skip, limit, provas: [...] }
+    const provasList = Array.isArray(provas) ? provas : (provas?.provas ?? []);
+    provasDisponiveis = provasList;
 
     // Mapa tentativa por prova_id
     const tentativasMap = {};
@@ -238,7 +242,7 @@ async function carregarProvasAluno() {
     const inscricoesMap = {};
     inscricoes.forEach(i => { inscricoesMap[i.prova_id] = i; });
 
-    renderTabelaProvas(provas, tentativasMap, inscricoesMap);
+    renderTabelaProvas(provasList, tentativasMap, inscricoesMap);
 
     // Histórico combinado
     const todosHistorico = [
