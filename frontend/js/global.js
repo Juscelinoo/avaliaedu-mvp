@@ -549,3 +549,39 @@ const API = {
    ─────────────────────────────────────── */
 // Todos os símbolos acima ficam no escopo global (window).
 // admin.js, aluno.js e auth.js podem usá-los diretamente.
+
+/* ─────────────────────────────────────────
+   13. MENU MOBILE (hamburguer off-canvas)
+   ─────────────────────────────────────── */
+(function initMenuMobile() {
+  function montar() {
+    const sidebar = document.querySelector('.sidebar');
+    if (!sidebar || document.querySelector('.nav-hamburger')) return;
+
+    const btn = document.createElement('button');
+    btn.className = 'nav-hamburger';
+    btn.type = 'button';
+    btn.setAttribute('aria-label', 'Abrir menu');
+    btn.innerHTML = '☰';
+
+    const overlay = document.createElement('div');
+    overlay.className = 'sidebar-overlay';
+
+    document.body.appendChild(btn);
+    document.body.appendChild(overlay);
+
+    const abrir = (open) => {
+      sidebar.classList.toggle('open', open);
+      overlay.classList.toggle('open', open);
+      btn.setAttribute('aria-label', open ? 'Fechar menu' : 'Abrir menu');
+    };
+    btn.addEventListener('click', () => abrir(!sidebar.classList.contains('open')));
+    overlay.addEventListener('click', () => abrir(false));
+    sidebar.querySelectorAll('a').forEach(a => a.addEventListener('click', () => abrir(false)));
+  }
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', montar);
+  } else {
+    montar();
+  }
+})();
