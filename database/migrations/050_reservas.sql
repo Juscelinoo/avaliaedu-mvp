@@ -14,11 +14,18 @@ CREATE TABLE IF NOT EXISTS reservas (
     necessidades_especiais TEXT,
     tentativa_id INTEGER,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE (aluno_id, prova_id)
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE INDEX IF NOT EXISTS idx_reservas_aluno_id ON reservas(aluno_id);
 CREATE INDEX IF NOT EXISTS idx_reservas_local_id ON reservas(local_id);
 CREATE INDEX IF NOT EXISTS idx_reservas_prova_id ON reservas(prova_id);
 CREATE INDEX IF NOT EXISTS idx_reservas_status ON reservas(status);
+
+-- Unicidade da reserva ATIVA por (aluno, prova): impede duas reservas ativas
+-- simultaneas para a mesma prova (anti race-condition, auditoria A-03), mas
+-- PERMITE re-reservar depois de CANCELADA/EXPIRADA. Um UNIQUE total
+-- (aluno_id, prova_id) seria errado: travaria o aluno para sempre apos a 1a
+-- reserva, mesmo cancelada.
+CREATE UNIQUE INDEX IF NOT EXISTS uq_reservas_aluno_prova_ativa
+    ON reservas (aluno_id, prova_id) WHERE status = 'ATIVA';

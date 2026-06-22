@@ -388,14 +388,54 @@ function _renderComponentesChecklist(componentesVinculados = []) {
     return;
   }
 
+  const busca = document.getElementById('prova-componentes-busca');
+  if (busca) busca.value = '';
+
   const idsVinculados = new Set(componentesVinculados.map(c => c.id));
 
-  container.innerHTML = _componentes.map(c => `
-    <label style="display:flex; align-items:center; gap:6px; font-size:13px; padding:4px 8px; border-radius:6px; background:var(--c-surface-2,#f4f6fa); cursor:pointer;">
-      <input type="checkbox" ${idsVinculados.has(c.id) ? 'checked' : ''}
-        onchange="toggleComponenteProva(${c.id}, this.checked)">
-      ${_esc(c.nome)}
-    </label>`).join('');
+  // Agrupa por nível na ordem pedagógica; dentro do grupo, ordena por nome.
+  const ordemNiveis = ['FUNDAMENTAL_I', 'FUNDAMENTAL_II', 'MEDIO', 'ENEM', 'EJA'];
+  const rank = n => { const i = ordemNiveis.indexOf(n); return i === -1 ? ordemNiveis.length : i; };
+  const ordenados = [..._componentes].sort((a, b) =>
+    rank(a.nivel) - rank(b.nivel) || (a.nome || '').localeCompare(b.nome || '', 'pt-BR'));
+
+  let html = '';
+  let nivelAtual = ' ';
+  ordenados.forEach(c => {
+    if (c.nivel !== nivelAtual) {
+      nivelAtual = c.nivel;
+      html += `<div class="comp-grupo-titulo" data-grupo="${_esc(c.nivel || '')}"
+        style="flex-basis:100%; font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.04em; color:var(--c-text-muted); margin:6px 0 2px;">${_esc(nivelLabel(c.nivel))}</div>`;
+    }
+    const termos = `${c.nome || ''} ${c.codigo || ''} ${nivelLabel(c.nivel)}`.toLowerCase();
+    html += `
+      <label class="comp-item" data-grupo="${_esc(c.nivel || '')}" data-busca="${_esc(termos)}"
+        style="display:flex; align-items:center; gap:6px; font-size:13px; padding:4px 8px; border-radius:6px; background:var(--c-surface-2,#f4f6fa); cursor:pointer;">
+        <input type="checkbox" ${idsVinculados.has(c.id) ? 'checked' : ''}
+          onchange="toggleComponenteProva(${c.id}, this.checked)">
+        ${_esc(c.nome)} <span style="color:var(--c-text-muted); font-size:12px;">(${_esc(c.codigo || '—')})</span>
+      </label>`;
+  });
+  container.innerHTML = html;
+}
+
+/** Filtra a checklist de componentes do modal de prova por nome/código/nível.
+ *  Usa mostrar/ocultar (não re-renderiza) para preservar as marcações. */
+function _filtrarComponentesProva() {
+  const busca = (document.getElementById('prova-componentes-busca')?.value || '').toLowerCase().trim();
+  const container = document.getElementById('prova-componentes-checklist');
+  if (!container) return;
+
+  container.querySelectorAll('.comp-item').forEach(el => {
+    el.style.display = el.dataset.busca.includes(busca) ? '' : 'none';
+  });
+  // Oculta cabeçalhos de grupos que ficaram sem itens visíveis.
+  container.querySelectorAll('.comp-grupo-titulo').forEach(h => {
+    const grupo = h.dataset.grupo;
+    const algum = [...container.querySelectorAll('.comp-item')]
+      .some(el => el.dataset.grupo === grupo && el.style.display !== 'none');
+    h.style.display = algum ? '' : 'none';
+  });
 }
 
 /** Vincula ou desvincula um componente da prova em edição (US37). Ação imediata. */
@@ -1993,7 +2033,7 @@ async function excluirLocal(id) {
 
 async function carregarReservas() {
   const tbody = document.getElementById('reservas-tbody');
-  tbody.innerHTML = `<tr><td colspan="6" class="table-empty">Carregando reservas...</td></tr>`;
+  tbody.innerHTML = `<tr><td colspan="7" class="table-empty">Carregando reservas...</td></tr>`;
 
   try {
     setLoading(true);
@@ -2001,7 +2041,7 @@ async function carregarReservas() {
     _reservas = Array.isArray(data) ? data : [];
     _renderReservas(_reservas);
   } catch (err) {
-    tbody.innerHTML = `<tr><td colspan="6" class="table-empty">Erro ao carregar: ${err.message}</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="7" class="table-empty">Erro ao carregar: ${err.message}</td></tr>`;
     showToast('Falha ao carregar reservas.', 'danger');
   } finally {
     setLoading(false);
@@ -2011,11 +2051,13 @@ async function carregarReservas() {
 function _renderReservas(lista) {
   const tbody = document.getElementById('reservas-tbody');
   if (!lista.length) {
-    tbody.innerHTML = `<tr><td colspan="6" class="table-empty">Nenhuma reserva encontrada.</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="7" class="table-empty">Nenhuma reserva encontrada.</td></tr>`;
     return;
   }
 
-  tbody.innerHTML = lista.map(r => `
+  tbody.innerHTML = lista.map(r => {
+    const podeCancelar = r.status === 'ATIVA' || r.status === 'CONFIRMADA';
+    return `
     <tr data-aluno="${_esc((r.aluno?.nome || '').toLowerCase())}"
         data-email="${_esc((r.aluno?.email || '').toLowerCase())}"
         data-prova="${_esc((r.prova_titulo || '').toLowerCase())}"
@@ -2029,7 +2071,16 @@ function _renderReservas(lista) {
       <td class="td-muted">${formatarDataHora(r.data_reserva)}</td>
       <td class="td-muted">${r.data_expiracao ? formatarDataHora(r.data_expiracao) : '—'}</td>
       <td>${_badgeReserva(r.status)}</td>
-    </tr>`).join('');
+      <td>
+        <div style="display:flex; gap:6px; flex-wrap:wrap;">
+          <button class="btn btn-ghost btn-sm" onclick="abrirModalEditarReserva(${r.id})">Editar</button>
+          ${podeCancelar
+            ? `<button class="btn btn-ghost btn-sm" style="color:var(--c-danger);" onclick="cancelarReservaAdmin(${r.id})">Cancelar</button>`
+            : ''}
+        </div>
+      </td>
+    </tr>`;
+  }).join('');
 }
 
 function _filtrarReservas() {
@@ -2047,12 +2098,166 @@ function _filtrarReservas() {
 function _badgeReserva(status) {
   const map = {
     ATIVA:      ['badge-publicada', 'Ativa'],
-    UTILIZADA:  ['badge-aprovado',  'Utilizada'],
+    CONFIRMADA: ['badge-aprovado',  'Confirmada'],
+    UTILIZADA:  ['badge-aprovado',  'Confirmada'],  // legado
     CANCELADA:  ['badge-reprovado', 'Cancelada'],
     EXPIRADA:   ['badge-rascunho',  'Expirada'],
   };
   const [cls, label] = map[status] || ['badge-rascunho', status];
   return `<span class="badge ${cls}">${label}</span>`;
+}
+
+/* ─────────────────────────────────────────
+   12C. RESERVAS — CRIAR / EDITAR / CANCELAR (admin)
+   ─────────────────────────────────────── */
+
+async function abrirModalNovaReserva() {
+  _limparFormReserva();
+  document.getElementById('modal-reserva-titulo').textContent = 'Nova reserva';
+  document.getElementById('reserva-id').value = '';
+  document.getElementById('reserva-aluno-group').style.display = '';
+  document.getElementById('reserva-aluno-fixo').style.display = 'none';
+  document.getElementById('reserva-status').value = 'ATIVA';
+
+  openModal('modal-reserva');
+  await _carregarSelectsReserva();
+}
+
+async function abrirModalEditarReserva(id) {
+  const r = _reservas.find(x => x.id === id);
+  if (!r) { showToast('Reserva não encontrada. Recarregue a lista.', 'warning'); return; }
+
+  _limparFormReserva();
+  document.getElementById('modal-reserva-titulo').textContent = 'Editar reserva';
+  document.getElementById('reserva-id').value = id;
+
+  // O dono (aluno) não muda na edição.
+  document.getElementById('reserva-aluno-group').style.display = 'none';
+  document.getElementById('reserva-aluno-fixo').style.display = '';
+  document.getElementById('reserva-aluno-fixo-nome').textContent =
+    `${r.aluno?.nome || '—'} (${r.aluno?.email || '—'})`;
+
+  openModal('modal-reserva');
+  await _carregarSelectsReserva();
+
+  // Pré-seleciona os valores atuais.
+  const provaId = r.prova_id;
+  const localId = r.local_id || r.local?.id;
+  if (provaId) document.getElementById('reserva-prova').value = String(provaId);
+  if (localId) document.getElementById('reserva-local').value = String(localId);
+  document.getElementById('reserva-status').value = r.status || 'ATIVA';
+  document.getElementById('reserva-data-reserva').value   = _toDatetimeLocal(r.data_reserva);
+  document.getElementById('reserva-data-expiracao').value = _toDatetimeLocal(r.data_expiracao);
+  document.getElementById('reserva-necessidades').value   = r.necessidades_especiais || '';
+}
+
+/** Popula os selects de aluno, prova (publicadas) e local do modal de reserva. */
+async function _carregarSelectsReserva() {
+  const selAluno = document.getElementById('reserva-aluno');
+  const selProva = document.getElementById('reserva-prova');
+  const selLocal = document.getElementById('reserva-local');
+  [selAluno, selProva, selLocal].forEach(s => { if (s) s.innerHTML = '<option value="">Carregando…</option>'; });
+
+  try {
+    const [alunos, provas, locais] = await Promise.all([
+      apiFetchAll('/usuarios?perfil=ALUNO', 'usuarios'),
+      apiFetchAll('/provas', 'provas'),
+      apiFetch('/locais'),
+    ]);
+
+    selAluno.innerHTML = '<option value="">Selecione o aluno…</option>' +
+      (alunos || []).map(a => `<option value="${a.id}">${_esc(a.nome)} — ${_esc(a.email)}</option>`).join('');
+
+    const publicadas = (Array.isArray(provas) ? provas : []).filter(p => p.status === 'PUBLICADA');
+    selProva.innerHTML = '<option value="">Selecione a prova…</option>' +
+      publicadas.map(p => `<option value="${p.id}">${_esc(p.titulo)} — ${nivelLabel(p.nivel)}</option>`).join('');
+
+    const locaisArr = Array.isArray(locais) ? locais : (locais?.locais ?? []);
+    selLocal.innerHTML = '<option value="">Selecione o local…</option>' +
+      locaisArr.map(l => `<option value="${l.id}">${_esc(l.nome)}${l.cidade ? ' — ' + _esc(l.cidade) : ''} (${l.vagas_restantes ?? '?'} vaga(s))</option>`).join('');
+  } catch (err) {
+    showToast('Erro ao carregar listas para a reserva.', 'danger');
+  }
+}
+
+async function salvarReserva() {
+  const id            = document.getElementById('reserva-id').value;
+  const provaId       = document.getElementById('reserva-prova').value;
+  const localId       = document.getElementById('reserva-local').value;
+  const status        = document.getElementById('reserva-status').value;
+  const dataReserva   = document.getElementById('reserva-data-reserva').value;
+  const dataExpiracao = document.getElementById('reserva-data-expiracao').value;
+  const necessidades  = document.getElementById('reserva-necessidades').value.trim();
+  const forcar        = document.getElementById('reserva-forcar').checked;
+
+  if (!provaId) { showToast('Selecione a prova.', 'warning'); return; }
+  if (!localId) { showToast('Selecione o local.', 'warning'); return; }
+
+  const btn = document.getElementById('btn-salvar-reserva');
+  btn.disabled = true; btn.textContent = 'Salvando…';
+
+  try {
+    if (id) {
+      const corpo = {
+        prova_id: Number(provaId),
+        local_id: Number(localId),
+        status,
+        data_reserva:   dataReserva   || null,
+        data_expiracao: dataExpiracao || null,
+        necessidades_especiais: necessidades || null,
+        forcar,
+      };
+      await apiFetch(`/reservas/admin/${id}`, { method: 'PATCH', body: JSON.stringify(corpo) });
+      showToast('Reserva atualizada!', 'success');
+    } else {
+      const alunoId = document.getElementById('reserva-aluno').value;
+      if (!alunoId) { showToast('Selecione o aluno.', 'warning'); return; }
+      const corpo = {
+        aluno_id: Number(alunoId),
+        prova_id: Number(provaId),
+        local_id: Number(localId),
+        status,
+        data_reserva:   dataReserva   || null,
+        data_expiracao: dataExpiracao || null,
+        necessidades_especiais: necessidades || null,
+        forcar,
+      };
+      await apiFetch('/reservas/admin', { method: 'POST', body: JSON.stringify(corpo) });
+      showToast('Reserva criada!', 'success');
+    }
+    closeModal('modal-reserva');
+    carregarReservas();
+  } catch (err) {
+    showToast(err.message || 'Erro ao salvar reserva.', 'danger');
+  } finally {
+    btn.disabled = false; btn.textContent = 'Salvar reserva';
+  }
+}
+
+function cancelarReservaAdmin(id) {
+  const r = _reservas.find(x => x.id === id);
+  const nome = r?.aluno?.nome ? _esc(r.aluno.nome) : 'este aluno';
+  confirmarExclusao(
+    'Cancelar reserva',
+    `Cancelar a reserva de <strong>${nome}</strong>? A vaga será liberada.`,
+    async () => {
+      try {
+        await apiFetch(`/reservas/admin/${id}`, { method: 'DELETE' });
+        showToast('Reserva cancelada. Vaga liberada.', 'success');
+        carregarReservas();
+      } catch (err) {
+        showToast(err.message || 'Erro ao cancelar reserva.', 'danger');
+      }
+    }
+  );
+  const btn = document.getElementById('btn-confirmar-acao');
+  if (btn) btn.textContent = 'Cancelar reserva';
+}
+
+function _limparFormReserva() {
+  ['reserva-id', 'reserva-data-reserva', 'reserva-data-expiracao', 'reserva-necessidades']
+    .forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+  const f = document.getElementById('reserva-forcar'); if (f) f.checked = false;
 }
 
 /* ─────────────────────────────────────────
@@ -2378,6 +2583,10 @@ function configurarFiltros() {
   // Componentes curriculares (US36)
   const compBusca = document.getElementById('comp-busca');
   if (compBusca) compBusca.addEventListener('input', debounce(_filtrarComponentes, 250));
+
+  // Componentes na modal de prova (US37) — busca/filtro
+  const compProvaBusca = document.getElementById('prova-componentes-busca');
+  if (compProvaBusca) compProvaBusca.addEventListener('input', debounce(_filtrarComponentesProva, 150));
 
   // Reservas (US27)
   const resBusca  = document.getElementById('reservas-busca');

@@ -205,9 +205,12 @@ def iniciar_simulado(
     db.add(tentativa)
     db.flush()
 
-    # US23: marca reserva como utilizada
+    # US23: marca reserva como confirmada (usada).
+    # OBS.: o CHECK do banco aceita apenas ATIVA | CANCELADA | EXPIRADA | CONFIRMADA.
+    # Antes gravava "UTILIZADA", que violava a constraint e quebrava (500) o início
+    # da prova presencial. Mantemos "CONFIRMADA" — a vaga continua ocupada.
     if reserva:
-        reserva.status = "UTILIZADA"
+        reserva.status = "CONFIRMADA"
         reserva.tentativa_id = tentativa.id
 
     db.commit()

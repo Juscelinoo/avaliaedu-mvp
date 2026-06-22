@@ -885,7 +885,7 @@ async function carregarReservas() {
 
 function _renderMetricasReservas(lista) {
   const ativas     = lista.filter(r => r.status === 'ATIVA').length;
-  const utilizadas = lista.filter(r => r.status === 'UTILIZADA').length;
+  const utilizadas = lista.filter(r => r.status === 'CONFIRMADA' || r.status === 'UTILIZADA').length;
   const inativas   = lista.filter(r => r.status === 'CANCELADA' || r.status === 'EXPIRADA').length;
 
   const elA = document.getElementById('res-stat-ativas');
@@ -958,7 +958,7 @@ function _renderListaReservas(lista) {
         ${ativa ? `
           <div style="margin-top:14px; padding-top:12px; border-top:1px solid var(--c-border);
                display:flex; gap:8px; justify-content:flex-end;">
-            <button class="btn btn-ghost btn-sm" onclick="cancelarMinhaReserva(${r.id}, '${(r.prova_titulo || '').replace(/'/g, '')}')">
+            <button class="btn btn-ghost btn-sm" onclick="cancelarMinhaReserva(${r.id})">
               Cancelar reserva
             </button>
           </div>` : ''}
@@ -970,7 +970,8 @@ function _renderListaReservas(lista) {
 function _badgeReserva(status) {
   const map = {
     ATIVA:      ['badge-publicada',    'Ativa'],
-    UTILIZADA:  ['badge-aprovado',     'Utilizada'],
+    CONFIRMADA: ['badge-aprovado',     'Utilizada'],
+    UTILIZADA:  ['badge-aprovado',     'Utilizada'],  // legado
     CANCELADA:  ['badge-reprovado',    'Cancelada'],
     EXPIRADA:   ['badge-rascunho',     'Expirada'],
   };
@@ -988,10 +989,10 @@ function _tempoRestante(dataFim) {
 }
 
 /** Cancela uma reserva com confirmação */
-function cancelarMinhaReserva(reservaId, provaTitulo) {
+function cancelarMinhaReserva(reservaId) {
   confirmarExclusao(
     'Cancelar reserva',
-    `Tem certeza que deseja cancelar a reserva para "${provaTitulo}"? A vaga será liberada.`,
+    'Tem certeza que deseja cancelar esta reserva? A vaga será liberada.',
     async () => {
       try {
         await apiFetch(`/reservas/${reservaId}`, { method: 'DELETE' });

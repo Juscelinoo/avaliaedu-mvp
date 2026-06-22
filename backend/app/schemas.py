@@ -574,6 +574,9 @@ class ReservaAlunoInfo(BaseModel):
 
 class ReservaAdminResponse(BaseModel):
     id: int
+    aluno_id: Optional[int] = None
+    prova_id: Optional[int] = None
+    local_id: Optional[int] = None
     status: str
     data_reserva: datetime
     data_expiracao: Optional[datetime] = None
@@ -584,6 +587,43 @@ class ReservaAdminResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+class ReservaAdminCreate(BaseModel):
+    """[ADMIN] Cria uma reserva em nome de um aluno."""
+    aluno_id: int
+    prova_id: int
+    local_id: int
+    data_reserva: Optional[datetime] = None
+    data_expiracao: Optional[datetime] = None
+    status: Optional[str] = "ATIVA"
+    necessidades_especiais: Optional[str] = None
+    forcar: bool = Field(
+        False,
+        description=(
+            "Ignora o limite de vagas do local e permite usar prova não "
+            "publicada. A regra de 1 reserva ATIVA por prova é sempre aplicada "
+            "(garantida pelo banco) e NÃO é burlada por este campo."
+        ),
+    )
+
+
+class ReservaAdminUpdate(BaseModel):
+    """[ADMIN] Edita uma reserva. Campos omitidos não são alterados."""
+    prova_id: Optional[int] = None
+    local_id: Optional[int] = None
+    data_reserva: Optional[datetime] = None
+    data_expiracao: Optional[datetime] = None
+    status: Optional[str] = None
+    necessidades_especiais: Optional[str] = None
+    forcar: bool = Field(
+        False,
+        description=(
+            "Ignora o limite de vagas do local e permite usar prova não "
+            "publicada. A regra de 1 reserva ATIVA por prova é sempre aplicada "
+            "(garantida pelo banco) e NÃO é burlada por este campo."
+        ),
+    )
 
 # =============================================================================
 # US44 — Inscrições em provas
