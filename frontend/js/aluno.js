@@ -235,7 +235,8 @@ async function carregarProvasAluno() {
     [...historico, ...certHist].forEach(t => {
       const pid = t.prova_id;
       if (!pid) return;
-      if (!tentativasMap[pid] || t.status === 'PAUSADO') tentativasMap[pid] = t;
+      // Prefere a tentativa ATIVA (em andamento/pausada) sobre concluídas.
+      if (!tentativasMap[pid] || t.status === 'PAUSADO' || t.status === 'EM_ANDAMENTO') tentativasMap[pid] = t;
     });
 
     // Mapa inscrição por prova_id
@@ -271,10 +272,11 @@ function renderTabelaProvas(provas, tentativasMap = {}, inscricoesMap = {}) {
   const agora = new Date();
 
   tbody.innerHTML = provas.map(p => {
-    const tent       = tentativasMap[p.id];
-    const finalizado = tent?.status === 'FINALIZADO';
-    const pausado    = tent?.status === 'PAUSADO';
-    const inscrito   = inscricoesMap[p.id];
+    const tent        = tentativasMap[p.id];
+    const concluido   = tent?.status === 'CONCLUIDA';
+    const emAndamento = tent?.status === 'EM_ANDAMENTO';
+    const pausado     = tent?.status === 'PAUSADO';
+    const inscrito    = inscricoesMap[p.id];
 
     // Determinar estado do período de inscrições
     const temPeriodoInscricao = p.data_inicio_inscricao || p.data_fim_inscricao;
@@ -293,9 +295,14 @@ function renderTabelaProvas(provas, tentativasMap = {}, inscricoesMap = {}) {
     // Montar botões de ação
     let acaoBtns = '';
 
-    if (finalizado) {
+    if (concluido) {
       acaoBtns = `<button class="btn btn-ghost btn-sm"
         onclick="verResultadoHistorico(${tent.id}, '${p.tipo}')">Ver resultado</button>`;
+
+    } else if (emAndamento) {
+      // Tentativa em andamento — retoma na questão atual (evita o 409 de "já iniciado").
+      acaoBtns = `<button class="btn btn-primary btn-sm"
+        onclick="continuarProva(${tent.id}, '${p.tipo}')">Continuar</button>`;
 
     } else if (pausado) {
       acaoBtns = `<button class="btn btn-secondary btn-sm"
@@ -979,6 +986,36 @@ function cancelarMinhaReserva(reservaId, provaTitulo) {
 }
 
 
+
+/** Continua uma tentativa EM ANDAMENTO entrando na questão atual (questao_atual). */
+async function continuarProva(tentativaId, tipo = 'SIMULADO') {
+  setLoading(true);
+  try {
+    const dados = await apiFetch(`/simulados/${tentativaId}/questao_atual`);
+
+    resetarExam();
+    exam.tipo          = tipo;
+    exam.tentativaId   = tentativaId;
+    exam.totalQuestoes = dados.total_questoes;
+
+    exam.questoesCache.push({
+      id:             dados.questao_id,
+      enunciado:      dados.enunciado,
+      alternativas:   dados.alternativas || [],
+      questao_numero: dados.questao_numero,
+    });
+
+    renderQuestaoExam();
+    irPara('realizar-prova');
+
+    if (dados.tempo_restante_segundos) iniciarTimer(dados.tempo_restante_segundos);
+
+  } catch (err) {
+    showToast(err.message || 'Não foi possível continuar a prova.', 'danger');
+  } finally {
+    setLoading(false);
+  }
+}
 
 /** Retoma um simulado pausado. */
 async function retomarProva(tentativaId) {
