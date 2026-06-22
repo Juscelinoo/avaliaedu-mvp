@@ -188,9 +188,10 @@ def gerar_pdf_certificado(certificado: models.Certificado) -> bytes:
     tent   = certificado.tentativa
     e      = _estilos()
 
-    # URL de validação pública
-    base_url = os.getenv("BASE_URL", "http://localhost:8000")
-    url_validacao = f"{base_url}/certificacoes/validar/{certificado.codigo_validacao}"
+    # URL de validação pública — aponta para a TELA do frontend (não para o
+    # endpoint JSON da API). O parâmetro ?codigo preenche e valida sozinho.
+    frontend_url = (os.getenv("FRONTEND_URL") or "https://frontend-ten-beryl-38.vercel.app").rstrip("/")
+    url_validacao = f"{frontend_url}/?codigo={certificado.codigo_validacao}#validar"
 
     # Data de emissão formatada
     data_emissao = certificado.data_emissao
