@@ -825,6 +825,15 @@
     <div class="modal-body">
       <input type="hidden" id="questao-id">
       <input type="hidden" id="questao-prova-id">
+      <div class="form-group" id="questao-de-modelo" style="margin-bottom:16px; padding:12px; background:var(--c-surface-2,#f4f6fa); border-radius:8px;">
+        <label class="form-label" for="questao-modelo-select">Criar a partir de um modelo (opcional)</label>
+        <div style="display:flex; gap:8px; align-items:center;">
+          <div class="form-select-wrap" style="flex:1;">
+            <select class="form-select" id="questao-modelo-select"><option value="">Selecione um modelo…</option></select>
+          </div>
+          <button type="button" class="btn btn-ghost btn-sm" onclick="usarModeloNaQuestao()">Usar modelo</button>
+        </div>
+      </div>
       <div class="form-group" style="margin-bottom:20px;">
         <label class="form-label required" for="questao-enunciado">Enunciado</label>
         <textarea class="form-textarea" id="questao-enunciado" rows="4" placeholder="Digite o enunciado completo da questão..."></textarea>

@@ -77,6 +77,18 @@ def listar_modelos(
     return geracao_service.listar_modelos(db, nivel, dificuldade, componente_id)
 
 
+@router.get(
+    "/modelos/{modelo_id}/instanciar",
+    summary="Resolve um modelo em uma questão concreta (sem salvar), para pré-preencher o formulário",
+)
+def instanciar_modelo(
+    modelo_id : int,
+    db        : Session = Depends(get_db),
+    admin     : models.Usuario = Depends(get_usuario_admin),
+):
+    return geracao_service.instanciar_modelo(modelo_id, db)
+
+
 @router.put(
     "/modelos/{modelo_id}",
     response_model=schemas.ModeloQuestaoResponse,

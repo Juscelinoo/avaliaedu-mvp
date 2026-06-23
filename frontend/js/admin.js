@@ -697,6 +697,10 @@ function abrirModalNovaQuestao() {
   document.getElementById('modal-questao-titulo').textContent = 'Nova questão';
   document.getElementById('questao-id').value = '';
   document.getElementById('questao-prova-id').value = _provaAtiva?.id || '';
+  // "Criar a partir de modelo" só aparece em questão nova.
+  const deModelo = document.getElementById('questao-de-modelo');
+  if (deModelo) deModelo.style.display = '';
+  carregarModelosSelectQuestao();
   // Inicia com 2 alternativas (mínimo obrigatório — US10)
   adicionarAlternativa();
   adicionarAlternativa();
@@ -704,9 +708,54 @@ function abrirModalNovaQuestao() {
   openModal('modal-questao');
 }
 
+/** Popula o select de modelos do modal de questão (para "criar a partir de modelo"). */
+async function carregarModelosSelectQuestao() {
+  const sel = document.getElementById('questao-modelo-select');
+  if (!sel) return;
+  sel.innerHTML = '<option value="">Carregando…</option>';
+  try {
+    const data = await apiFetch('/geracao/modelos');
+    _modelos = Array.isArray(data) ? data : (data?.modelos ?? []);
+    sel.innerHTML = '<option value="">Selecione um modelo…</option>' +
+      _modelos.map(m =>
+        `<option value="${m.id}">${_esc((m.modelo_texto || '').slice(0, 60))} — ${nivelLabel(m.nivel)}</option>`
+      ).join('');
+  } catch {
+    sel.innerHTML = '<option value="">(erro ao carregar modelos)</option>';
+  }
+}
+
+/** Pré-preenche o formulário de questão a partir do modelo selecionado (resolve variáveis). */
+async function usarModeloNaQuestao() {
+  const id = document.getElementById('questao-modelo-select').value;
+  if (!id) { showToast('Selecione um modelo.', 'warning'); return; }
+  try {
+    setLoading(true);
+    const m = await apiFetch(`/geracao/modelos/${id}/instanciar`);
+    document.getElementById('questao-enunciado').value   = m.enunciado || '';
+    document.getElementById('questao-dificuldade').value = m.nivel_dificuldade || 'MEDIO';
+    _questaoImagemAtual = m.imagem_url || null;
+    _renderImagemQuestao();
+
+    document.getElementById('alternativas-container').innerHTML = '';
+    _altCounter = 0;
+    (m.alternativas || []).forEach(a => adicionarAlternativa(a.texto, a.is_correta));
+    while (document.querySelectorAll('.alt-row').length < 2) adicionarAlternativa();
+
+    await carregarComponentesSelect('questao-componente', m.componente_id ?? null);
+    showToast('Modelo carregado. Edite e salve a questão.', 'success');
+  } catch (err) {
+    showToast(err.message || 'Erro ao carregar modelo.', 'danger');
+  } finally {
+    setLoading(false);
+  }
+}
+
 async function abrirModalEditarQuestao(id) {
   _limparFormQuestao();
   document.getElementById('modal-questao-titulo').textContent = 'Editar questão';
+  const deModelo = document.getElementById('questao-de-modelo');
+  if (deModelo) deModelo.style.display = 'none';  // "criar de modelo" só em questão nova
 
   try {
     setLoading(true);

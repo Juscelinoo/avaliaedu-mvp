@@ -105,6 +105,35 @@ def _gerar_questao_a_partir_de_modelo(
     return questao
 
 
+def instanciar_modelo(modelo_id: int, db: Session) -> dict:
+    """Resolve um modelo em uma questão concreta (variáveis sorteadas) SEM
+    persistir. Usado para pré-preencher o modal de nova questão (US11)."""
+    modelo = db.query(models.ModeloQuestao).filter(
+        models.ModeloQuestao.id == modelo_id
+    ).first()
+    if not modelo:
+        raise HTTPException(status_code=404, detail="Modelo não encontrado.")
+
+    variaveis_def = modelo.variaveis if isinstance(modelo.variaveis, dict) else {}
+    ctx = _resolver_variaveis(variaveis_def)
+
+    enunciado = _aplicar_template(modelo.modelo_texto, ctx)
+    gabarito  = _aplicar_template(modelo.gabarito or "", ctx)
+    distradores_raw = modelo.distradores if isinstance(modelo.distradores, list) else []
+    distradores = [_aplicar_template(d, ctx) for d in distradores_raw]
+
+    alternativas = [{"texto": gabarito, "is_correta": True}]
+    alternativas += [{"texto": d, "is_correta": False} for d in distradores]
+
+    return {
+        "enunciado": enunciado,
+        "nivel_dificuldade": modelo.dificuldade,
+        "componente_id": modelo.componente_id,
+        "imagem_url": modelo.imagem_url,
+        "alternativas": alternativas,
+    }
+
+
 def gerar_questoes_para_prova(
     prova_id: int,
     quantidade: int,
