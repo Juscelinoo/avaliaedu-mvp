@@ -152,6 +152,19 @@ function requireAuth(perfilEsperado = null) {
  *     body: JSON.stringify({ titulo: 'Simulado Maio', ... })
  *   });
  */
+/** Pausa simples (usada nas re-tentativas de cold start). */
+function _esperar(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+/** Aviso (no máximo 1x a cada 15s) de que o servidor free está "acordando". */
+let _servidorIniciandoEm = 0;
+function _avisarServidorIniciando() {
+  const agora = Date.now();
+  if (agora - _servidorIniciandoEm > 15000 && typeof showToast === 'function') {
+    _servidorIniciandoEm = agora;
+    showToast('O servidor está iniciando (plano grátis pode levar até ~1 min). Aguarde…', 'info', 6000);
+  }
+}
+
 async function apiFetch(endpoint, options = {}) {
   const token = getToken();
 
@@ -166,56 +179,77 @@ async function apiFetch(endpoint, options = {}) {
     delete headers['Content-Type'];
   }
 
-  // Timeout: o free-tier (Render) pode demorar no cold start, mas a UI não pode
-  // pendurar pra sempre. Aborta após `options.timeout` (padrão 60s) e devolve um
-  // erro legível — o catch de quem chamou reseta o botão e mostra o toast.
-  const _timeoutMs = options.timeout || 60000;
-  const _controller = new AbortController();
-  const _timer = setTimeout(() => _controller.abort(), _timeoutMs);
+  // Cold start do Render (plano grátis): após ~15 min ocioso, a 1ª leva de
+  // requisições demora ~50s ou devolve 502/503/504 enquanto o servidor "acorda".
+  // Para os GET (carregamento de telas) re-tentamos automaticamente, com aviso
+  // amigável, em vez de mostrar "erro ao carregar". Mutations (POST/PUT/PATCH/
+  // DELETE) NÃO são re-tentadas, para evitar duplicidade.
+  const _timeoutMs   = options.timeout || 60000;
+  const _metodo      = (options.method || 'GET').toUpperCase();
+  const _podeRetry   = _metodo === 'GET';
+  const _maxTent     = _podeRetry ? 3 : 1;
+  const _TRANSIENTES = [502, 503, 504];
 
-  let response;
-  try {
-    response = await fetch(`${API_BASE}${endpoint}`, {
-      ...options,
-      headers,
-      signal: _controller.signal,
-    });
-  } catch (erroRede) {
+  let _ultimoErro;
+  for (let _tent = 1; _tent <= _maxTent; _tent++) {
+    const _controller = new AbortController();
+    const _timer = setTimeout(() => _controller.abort(), _timeoutMs);
+
+    let response;
+    try {
+      response = await fetch(`${API_BASE}${endpoint}`, {
+        ...options,
+        headers,
+        signal: _controller.signal,
+      });
+    } catch (erroRede) {
+      clearTimeout(_timer);
+      const ehAbort = erroRede && erroRede.name === 'AbortError';
+      _ultimoErro = new Error(ehAbort
+        ? 'O servidor demorou demais para responder (pode estar reiniciando). Aguarde alguns segundos e tente novamente.'
+        : 'Falha de conexão com o servidor. Verifique sua internet e tente novamente.');
+      if (_podeRetry && _tent < _maxTent) { _avisarServidorIniciando(); await _esperar(2000 * _tent); continue; }
+      throw _ultimoErro;
+    }
     clearTimeout(_timer);
-    if (erroRede && erroRede.name === 'AbortError') {
-      throw new Error('O servidor demorou demais para responder (pode estar reiniciando). Aguarde alguns segundos e tente novamente.');
+
+    // Token expirado ou inválido → desloga
+    if (response.status === 401) {
+      limparSessao();
+      window.location.href = '/';
+      return;
     }
-    throw new Error('Falha de conexão com o servidor. Verifique sua internet e tente novamente.');
-  }
-  clearTimeout(_timer);
 
-  // Token expirado ou inválido → desloga
-  if (response.status === 401) {
-    limparSessao();
-    window.location.href = '/';
-    return;
-  }
+    // Servidor ainda acordando (502/503/504): re-tenta os GET com aviso amigável.
+    if (_TRANSIENTES.includes(response.status) && _podeRetry && _tent < _maxTent) {
+      _avisarServidorIniciando();
+      await _esperar(2000 * _tent);
+      continue;
+    }
 
-  // Sem conteúdo (204 Delete, etc.)
-  if (response.status === 204) return null;
+    // Sem conteúdo (204 Delete, etc.)
+    if (response.status === 204) return null;
 
-  // A resposta pode não ser JSON (ex.: 502/503 do host devolve HTML).
-  let data = null;
-  try {
-    data = await response.json();
-  } catch {
+    // A resposta pode não ser JSON (ex.: 502/503 do host devolve HTML).
+    let data = null;
+    try {
+      data = await response.json();
+    } catch {
+      if (!response.ok) {
+        throw new Error(`Erro ${response.status} — o servidor não respondeu corretamente. Tente novamente em instantes.`);
+      }
+      return null;
+    }
+
     if (!response.ok) {
-      throw new Error(`Erro ${response.status} — o servidor não respondeu corretamente. Tente novamente em instantes.`);
+      const mensagem = data?.detail || `Erro ${response.status}`;
+      throw new Error(typeof mensagem === 'string' ? mensagem : JSON.stringify(mensagem));
     }
-    return null;
+
+    return data;
   }
 
-  if (!response.ok) {
-    const mensagem = data?.detail || `Erro ${response.status}`;
-    throw new Error(typeof mensagem === 'string' ? mensagem : JSON.stringify(mensagem));
-  }
-
-  return data;
+  throw _ultimoErro || new Error('Não foi possível comunicar com o servidor. Tente novamente em instantes.');
 }
 
 /**
