@@ -422,7 +422,10 @@ class CertificadoValidarResponse(BaseModel):
 class HistoricoCertificacaoResponse(BaseModel):
     id: int
     prova_titulo: str
-    data_realizacao: datetime
+    # Pode ser None: uma certificação SOLICITADA/INSCRITA ainda não tem data de
+    # início (data_inicio NULL). Antes era obrigatória -> ResponseValidationError
+    # (500) em /certificacoes/historico, quebrando a tela de Provas do aluno.
+    data_realizacao: Optional[datetime] = None
     nota: Optional[float] = None
     resultado: Optional[str] = None
     certificado_id: Optional[int] = None
